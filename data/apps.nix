@@ -306,7 +306,9 @@
     menuId = "install.ai.chatgpt";
     label = "ChatGPT Desktop";
     category = "AI";
-    unavailable = "AUR-only; use the Web App menu entry instead.";
+    attr = "openai-codex-desktop";
+    ours = true;
+    unfree = true;
     arch = "openai-codex-desktop";
   };
   dictation = {
@@ -320,21 +322,25 @@
     menuId = "install.ai.grok-bot";
     label = "Grok Bot";
     category = "AI";
-    unavailable = "AUR-only; use the Web App menu entry instead.";
+    attr = "grok-bot";
+    ours = true;
+    unfree = true;
     arch = "grok-bot";
   };
   t3-code = {
     menuId = "install.ai.t3-code";
     label = "T3 Code";
     category = "AI";
-    unavailable = "AUR-only, no nixpkgs package.";
+    attr = "t3code";
+    ours = true;
     arch = "t3code-bin";
   };
   once = {
     menuId = "install.service.once";
     label = "ONCE";
     category = "Service";
-    unavailable = "AUR-only, no nixpkgs package.";
+    attr = "once";
+    ours = true;
     arch = "once-bin";
   };
 }

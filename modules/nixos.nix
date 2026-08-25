@@ -11,7 +11,7 @@ in
 {
   imports = [
     inputs.hyprland.nixosModules.default
-    ./apps.nix
+    (import ./apps.nix inputs)
   ];
 
   options.programs.nixarchy = {

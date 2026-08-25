@@ -1,3 +1,4 @@
+inputs:
 {
   config,
   lib,
@@ -29,8 +30,16 @@ let
     // lib.optionalAttrs (app ? attr) {
       package = lib.mkOption {
         type = lib.types.package;
-        default = pkgs.${app.attr};
-        defaultText = lib.literalExpression "pkgs.${app.attr}";
+        # `ours` apps are ones nixpkgs does not carry and that nixarchy
+        # packages itself; they live in the overlay's nixarchy-apps set.
+        default =
+          if app.ours or false then
+            inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.${app.attr}
+          else
+            pkgs.${app.attr};
+        defaultText = lib.literalExpression (
+          if app.ours or false then "nixarchy.packages.\${system}.${app.attr}" else "pkgs.${app.attr}"
+        );
         description = "Package used for ${app.label}. Override to pin or patch it.";
       };
     }

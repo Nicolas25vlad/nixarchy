@@ -63,6 +63,24 @@
     in
     {
       overlays.default = final: _prev: {
+        # Apps Omarchy offers that nixpkgs does not carry. Packaged here so a
+        # NixOS user gets the same menu Arch users do, rather than a menu with
+        # holes in it.
+        nixarchy-apps =
+          let
+            mkElectronDeb = final.callPackage ./pkgs/apps/electron-deb.nix { };
+          in
+          {
+            once = final.callPackage ./pkgs/apps/once.nix { };
+            t3code = final.callPackage ./pkgs/apps/t3code.nix { };
+            grok-bot = final.callPackage ./pkgs/apps/grok-bot.nix {
+              inherit mkElectronDeb;
+            };
+            openai-codex-desktop = final.callPackage ./pkgs/apps/openai-codex-desktop.nix {
+              inherit mkElectronDeb;
+            };
+          };
+
         omarchy = final.callPackage ./pkgs/omarchy {
           src = omarchy;
           version = omarchyVersion;
@@ -74,6 +92,13 @@
       packages = eachSystem (system: {
         default = self.packages.${system}.omarchy;
         inherit (pkgsFor.${system}) omarchy;
+
+        inherit (pkgsFor.${system}.nixarchy-apps)
+          once
+          t3code
+          grok-bot
+          openai-codex-desktop
+          ;
 
         # Boot the smoke test: `nix run .#vm`
         vm = self.nixosConfigurations.vm.config.system.build.vm;
