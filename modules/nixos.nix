@@ -9,7 +9,10 @@ let
   cfg = config.programs.nixarchy;
 in
 {
-  imports = [ inputs.hyprland.nixosModules.default ];
+  imports = [
+    inputs.hyprland.nixosModules.default
+    ./apps.nix
+  ];
 
   options.programs.nixarchy = {
     enable = lib.mkEnableOption "Nixarchy, the Omarchy desktop vendored for NixOS";
