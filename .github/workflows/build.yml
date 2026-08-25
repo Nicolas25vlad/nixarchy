@@ -112,7 +112,18 @@ jobs:
               sys.exit(f"::error::only {len(wired)} install rows wired to nixarchy-app-enable")
           if rows.get("install.aur", {}).get("when") != "false":
               sys.exit("::error::install.aur is not hidden; there is no AUR on NixOS")
-          print(f"menu extension OK: {len(rows)} rows, {len(wired)} wired")
+          # Every row must carry a real label. MenuModel.js normalizes an
+          # override before merging (`label: value.label || id`) and then
+          # copies all its keys over the default, so a row that omits a label
+          # does not inherit upstream's -- it renders the raw id, and the menu
+          # reads "install.editor.vscode" instead of "VSCode".
+          unlabelled = [k for k, v in rows.items() if not v.get("label")]
+          if unlabelled:
+              sys.exit(f"::error::menu rows with no label: {unlabelled}")
+          idlike = [k for k, v in rows.items() if v.get("label") == k]
+          if idlike:
+              sys.exit(f"::error::menu rows whose label is their id: {idlike}")
+          print(f"menu extension OK: {len(rows)} rows, {len(wired)} wired, all labelled")
           PY
 
           # The template is Nix that gets imported into the user's flake; if it

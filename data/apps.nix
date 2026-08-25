@@ -337,7 +337,11 @@
     arch = "grok-bot";
   };
   t3-code = {
-    menuId = "install.ai.t3-code";
+    # No menuId: Omarchy v4.0.1 has no install.ai.t3-code row -- it was added
+    # upstream after the tag this flake pins. The package is still available
+    # as programs.nixarchy.apps.t3-code; the menu row returns when the omarchy
+    # input is bumped. The generator fails on a menuId upstream does not
+    # ship, which is how this was caught.
     label = "T3 Code";
     category = "AI";
     attr = "t3code";
