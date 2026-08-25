@@ -148,6 +148,13 @@ in
       font-awesome
     ];
 
-    xdg.portal.enable = true;
+    xdg.portal = {
+      enable = true;
+      # xdg-desktop-portal-gtk is in upstream's base.packages. A portal is
+      # registered, not merely installed, so it belongs here rather than in
+      # the package's runtimeDeps. The hyprland portal comes from
+      # programs.hyprland.portalPackage above.
+      extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+    };
   };
 }

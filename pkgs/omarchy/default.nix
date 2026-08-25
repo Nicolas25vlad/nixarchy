@@ -79,6 +79,20 @@
   eza,
   zoxide,
   starship,
+  gtk3,
+  udiskie,
+  git,
+  less,
+  man-db,
+  unzip,
+  pamixer,
+  alsa-utils,
+  imv,
+  evince,
+  localsend,
+  tldr,
+  inxi,
+  ffmpegthumbnailer,
 }:
 let
   # Everything the 438 scripts in bin/ invoke. Kept explicit rather than
@@ -155,6 +169,25 @@ let
     eza
     zoxide
     starship
+
+    # Cross-checked against upstream's own install/omarchy-base.packages
+    # rather than against another hand-grep of the bins. That manifest is what
+    # Omarchy declares it needs; curating the list by eye is what produced one
+    # missing command per boot.
+    gtk3 # gtk-launch, used by every omarchy-install-* to start the app
+    udiskie # autostart.lua execs this on every login
+    git # theme install, update checks
+    less
+    man-db
+    unzip
+    pamixer # audio bins
+    alsa-utils # amixer/alsamixer
+    imv # image viewer the menus open
+    evince # PDF viewer
+    localsend
+    tldr
+    inxi # omarchy-debug
+    ffmpegthumbnailer # nautilus thumbnails
   ];
 in
 stdenvNoCC.mkDerivation {

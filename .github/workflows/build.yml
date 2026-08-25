@@ -77,7 +77,9 @@ jobs:
           missing=""
           for cmd in xdg-terminal-exec uwsm-app foot hyprctl quickshell jq gum \
                      wl-copy grim slurp brightnessctl pactl wpctl nmcli \
-                     bluetoothctl notify-send mise nvim; do
+                     bluetoothctl notify-send mise nvim gtk-launch udiskie \
+                     git less man unzip pamixer imv magick rg zbarimg \
+                     inotifywait starship zoxide eza lazygit; do
             [ -x "result/bin/$cmd" ] || missing="$missing $cmd"
           done
           if [ -n "$missing" ]; then
