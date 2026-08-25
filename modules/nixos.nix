@@ -134,13 +134,19 @@ in
 
     boot.plymouth.enable = true;
 
-    fonts.packages = with pkgs; [
+    fonts.packages = [
+      # Omarchy's own icon font travels inside the package, at
+      # share/fonts/truetype/omarchy.ttf. Without it registered here the menu
+      # button's U+E900 draws as tofu -- an empty box in the bar.
+      cfg.package
+    ]
+    ++ (with pkgs; [
       noto-fonts
       noto-fonts-cjk-sans
       noto-fonts-color-emoji
       nerd-fonts.jetbrains-mono
       font-awesome
-    ];
+    ]);
 
     xdg.portal = {
       enable = true;

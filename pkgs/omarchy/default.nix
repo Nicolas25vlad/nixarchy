@@ -94,6 +94,10 @@
   inxi,
   ffmpegthumbnailer,
   vips,
+
+  # Branding: this is a NixOS port, so the menu button wears the snowflake.
+  nixos-icons,
+
 }:
 let
   # Everything the 438 scripts in bin/ invoke. Kept explicit rather than
@@ -237,6 +241,19 @@ stdenvNoCC.mkDerivation {
     for script in $out/share/omarchy/bin/*; do
       ln -s "$script" "$out/bin/$(basename "$script")"
     done
+
+    # Upstream installs its bundled icon font to /usr/share/fonts/omarchy.
+    # Nothing on NixOS scans $OMARCHY_PATH for fonts, so without this the
+    # menu button renders U+E900 as tofu -- a literal empty box in the bar.
+    # See default/fonts/omarchy/README.md for the private-use glyph map.
+    install -Dm644 default/fonts/omarchy/omarchy.ttf \
+      $out/share/fonts/truetype/omarchy.ttf
+
+    # Wear the snowflake.
+    substitute ${./menu-bar-widget.qml} \
+      $out/share/omarchy/shell/plugins/menu/BarWidget.qml \
+      --subst-var-by snowflake \
+      "${nixos-icons}/share/icons/hicolor/256x256/apps/nix-snowflake.png"
 
     runHook postInstall
   '';
