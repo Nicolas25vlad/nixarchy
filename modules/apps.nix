@@ -178,10 +178,28 @@ let
           description = "nix flake update, then nixos-rebuild switch --flake";
         };
 
-        # Omarchy release channels (stable/edge) are a pacman repository
-        # choice. Here the version is whatever the flake's omarchy input is
-        # pinned to, so there is no channel to switch.
+        # Omarchy's release channels are a pacman repository choice. Here the
+        # version is whatever the flake's omarchy input is pinned to, so there
+        # is nothing to switch. Switching nixpkgs between stable and unstable
+        # would mean editing the user's own system flake, which nixarchy does
+        # not own -- it owns the Omarchy installation and its applications.
+        #
+        # The children are hidden individually: hiding a parent keeps its rows
+        # out of the menu tree, but they stay reachable through search and
+        # `omarchy menu summon`.
         "update.channel" = {
+          when = "false";
+        };
+        "update.channel.stable" = {
+          when = "false";
+        };
+        "update.channel.rc" = {
+          when = "false";
+        };
+        "update.channel.edge" = {
+          when = "false";
+        };
+        "update.channel.dev" = {
           when = "false";
         };
 
