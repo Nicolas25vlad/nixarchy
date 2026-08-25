@@ -81,8 +81,21 @@ jobs:
           sudo systemctl restart nix-daemon || true
           nix build .#checks.x86_64-linux.vm-toplevel --print-build-logs
 
+      # The check that earns the auto-merge below. Everything before it proves
+      # the tree assembles; this boots a machine, screenshots it through qemu
+      # and compares the screen's average colour to the wallpaper's own.
+      #
+      # Without it a green run meant very little: the desktop once rendered
+      # pure black while every other check here passed, because a wallpaper
+      # wider than GL_MAX_TEXTURE_SIZE draws nothing at all and Qt still
+      # reports the image Ready.
+      - name: Boot a session and check the desktop renders
+        if: steps.rel.outputs.changed == 'true'
+        run: nix build .#checks.x86_64-linux.session --print-build-logs
+
       - name: Open a pull request
         if: steps.rel.outputs.changed == 'true'
+        id: pr
         uses: peter-evans/create-pull-request@v7
         with:
           branch: update/omarchy
@@ -91,19 +104,32 @@ jobs:
           body: |
             Bumps the vendored Omarchy to `${{ steps.rel.outputs.latest }}`.
 
-            The tree builds, every bin this port replaces is still present,
-            every `substituteInPlace` anchor still matches, every menu row it
-            overrides still exists, and every app in the Install menu is still
-            mapped in `data/apps.nix`.
+            Merged automatically because every check passed:
 
-            **None of that means the desktop still works.** Boot the VM before
-            merging:
+            - the vendored tree builds
+            - every bin this port replaces is still present
+            - every `substituteInPlace` anchor still matches
+            - every menu row it overrides still exists
+            - all Install rows are still mapped in `data/apps.nix`
+            - the full system closure builds
+            - **a booted session renders its wallpaper**
 
-            ```sh
-            QEMU_OPTS="-device virtio-vga-gl -display gtk,gl=on" nix run .#vm
-            ```
+            If something is wrong anyway, roll back with
+            `nixos-rebuild --rollback` or the boot menu, and open an issue.
           labels: dependencies
           delete-branch: true
+
+      # Auto-merge only because the session check above actually boots the
+      # desktop. Reaching this step already means every check passed -- a
+      # failure anywhere above fails the job and never gets here.
+      - name: Merge it
+        if: steps.rel.outputs.changed == 'true' && steps.pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ steps.pr.outputs.pull-request-number }} \
+            --squash --delete-branch --admin
+          echo "merged Omarchy ${{ steps.rel.outputs.latest }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report what needs a human
         if: failure() && steps.rel.outputs.changed == 'true'

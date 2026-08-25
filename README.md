@@ -168,34 +168,42 @@ ssh -p 2222 omarchy@localhost 'bash -s' < docs/capture-screenshots.sh
 scp -P 2222 'omarchy@localhost:~/nixarchy-screenshots/*.png' docs/screenshots/
 ```
 
-## Keeping up with Omarchy
+## Staying current with Omarchy
 
-Three schedules, each answering a different question:
+Almost nothing here waits on a maintainer.
 
-| workflow | asks | when |
-|---|---|---|
-| `omarchy.yml` | has Omarchy released? does this port still build against it? | daily |
-| `update.yml` | has `once` released? | weekly |
-| `build.yml` | does everything still hold? | every push |
+**30 of the 37 apps never touch this repo.** Brave, VSCode, Steam, Signal and
+the rest are installed as `pkgs.<name>` from **your** nixpkgs. Your own
+`nix flake update` moves them. Nixarchy is not in that path, so there is
+nobody to wait for.
 
-When Omarchy releases, `omarchy.yml` bumps the input and re-runs every
-assertion against the new tree. Each one catches a different way upstream can
-break the port:
+**Omarchy itself is checked daily.** `omarchy.yml` asks GitHub for the newest
+release, and if it differs from the pin it bumps the input and re-runs every
+assertion against the new tree:
 
-- a bin this port replaces disappearing or being renamed
-- a `substituteInPlace` anchor changing under us (`--replace-fail`)
-- a menu row id it overrides no longer existing
-- **a new app in the Install menu that `data/apps.nix` does not map** — which
-  would otherwise reach users as a row still calling pacman
+```
+v4.0.0 -> v4.0.1
+  ✓ the vendored tree builds
+  ✓ every bin this port replaces is still there
+  ✓ every substituteInPlace anchor still matches   (--replace-fail)
+  ✓ every menu row it overrides still exists
+  ✓ all 37 Install rows are still mapped in data/apps.nix
+  ✓ the full system closure builds
+  ✓ a booted session renders its wallpaper
+```
 
-If they all pass, it opens a PR. If one fails, the run summary names which of
-the four it was and which file to edit. **Neither is auto-merged**: a build
-proves the tree assembles, not that the desktop still comes up, so the PR asks
-you to boot the VM first.
+Each line is a different way upstream can break this port, and each has caught
+a real one. The last is the reason the others are not enough on their own: the
+desktop once rendered pure black while every other check passed — a wallpaper
+wider than `GL_MAX_TEXTURE_SIZE` draws nothing at all while Qt still reports
+the image `Ready`. So the session test boots a machine, screenshots it through
+qemu, and compares the screen's average colour to the wallpaper's own.
 
-Adding a new Omarchy app is then usually one entry in `data/apps.nix` —
-`attr` for a plain nixpkgs package, `option` for something that needs a NixOS
-module. The menu rewiring and the Remove row are generated from it.
+When a check fails, the run summary names which of them broke and which file
+to edit. **A new app in Omarchy's Install menu is usually one line** in
+`data/apps.nix` — `attr` for a plain nixpkgs package, `option` for something
+that needs a NixOS module. The menu rewiring and its Remove row are generated
+from that entry.
 
 ## Keeping applications updated
 

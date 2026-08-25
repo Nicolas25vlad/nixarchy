@@ -84,6 +84,7 @@ pkgs.testers.runNixOSTest {
   };
 
   testScript = ''
+    import os
     machine.wait_for_unit("multi-user.target")
 
     # ---- app selection -------------------------------------------------
@@ -130,6 +131,47 @@ pkgs.testers.runNixOSTest {
 
     print("=========== is the shell alive? ===========")
     print(machine.succeed("pgrep -a quickshell || echo 'NO QUICKSHELL PROCESS'"))
+
+    # ---- does the wallpaper actually render? ----------------------------
+    # Everything else here proves the tree assembles. This proves the desktop
+    # is not black -- which every other check passed while it was.
+    #
+    # machine.screenshot() goes through qemu's own screendump rather than a
+    # compositor screencopy, so it works with no display backend; `grim`
+    # blocks forever in that situation because nothing consumes the frames.
+    import subprocess
+
+    def avg(path):
+        out = subprocess.run(
+            ["${pkgs.imagemagick}/bin/magick", path, "-resize", "1x1", "-format", "%[hex:u]", "info:"],
+            capture_output=True, text=True, check=True)
+        return tuple(int(out.stdout.strip()[i:i + 2], 16) for i in (0, 2, 4))
+
+    machine.wait_until_succeeds("test -s $(readlink -f /home/omarchy/.local/state/omarchy/current/background)")
+    machine.sleep(5)
+    machine.screenshot("desktop")
+    shot = os.path.join(os.environ["out"], "desktop.png")
+    paper = machine.succeed(
+        "readlink -f /home/omarchy/.local/state/omarchy/current/background").strip()
+    machine.copy_from_machine(paper, "")
+    local_paper = os.path.join(os.environ["out"], os.path.basename(paper))
+
+    s_r, s_g, s_b = avg(shot)
+    w_r, w_g, w_b = avg(local_paper)
+    print(f"screen    #{s_r:02X}{s_g:02X}{s_b:02X}")
+    print(f"wallpaper #{w_r:02X}{w_g:02X}{w_b:02X}")
+
+    # A wallpaper that never became a texture leaves the theme background --
+    # near-black, and nothing like the image. Tolerance is wide on purpose:
+    # the bar and any toast tint the average, and the point is to catch black,
+    # not to grade colour accuracy.
+    delta = abs(s_r - w_r) + abs(s_g - w_g) + abs(s_b - w_b)
+    assert delta < 120, (
+        f"the desktop does not look like its wallpaper (delta {delta}). "
+        "A wallpaper wider than GL_MAX_TEXTURE_SIZE renders as nothing at all, "
+        "with Qt still reporting the image Ready -- see the sourceSize cap in "
+        "pkgs/omarchy/default.nix.")
+    print(f"wallpaper renders (delta {delta})")
 
   '';
 }
