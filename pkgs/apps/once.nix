@@ -7,19 +7,26 @@
   makeWrapper,
 }:
 let
-  version = "0.3.0";
+  version = "0.3.1";
   # Hashes come from omarchy-pkgs' own PKGBUILD rather than from a local
   # download, so they are the same artefacts Omarchy ships on Arch.
-  sources = {
-    x86_64-linux = fetchurl {
-      url = "https://github.com/basecamp/once/releases/download/v${version}/once-linux-amd64";
-      sha256 = "0e4c385ee3da47eeee0827c5db2977b1440548f98477b040845a593f0062ad0f";
-    };
-    aarch64-linux = fetchurl {
-      url = "https://github.com/basecamp/once/releases/download/v${version}/once-linux-arm64";
-      sha256 = "5e7cc49ff24cf0b9f45393f9895dd9d502a901100508c91fc137ede45b8d8467";
-    };
+  # Keyed by system so the updater can rewrite each hash by name; see
+  # pkgs/apps/update-script.nix.
+  hashes = {
+    "x86_64-linux" = "ef1eaf151a83b16e39dbfed49fe29ab9b703db7a441a911517044c6256e2aa27";
+    "aarch64-linux" = "5374276c0c83bb9b8c15adadb7250f70c5c1a37bfd3006c3b8b14bda14495dc9";
   };
+  urls = {
+    "x86_64-linux" = "https://github.com/basecamp/once/releases/download/v${version}/once-linux-amd64";
+    "aarch64-linux" = "https://github.com/basecamp/once/releases/download/v${version}/once-linux-arm64";
+  };
+  sources = lib.mapAttrs (
+    system: sha256:
+    fetchurl {
+      url = urls.${system};
+      inherit sha256;
+    }
+  ) hashes;
 in
 stdenvNoCC.mkDerivation {
   pname = "once";

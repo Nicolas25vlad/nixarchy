@@ -87,6 +87,41 @@ nix flake check        # everything
 nix run .#vm           # smoke test (see "Try it in a VM" for QEMU_OPTS)
 ```
 
+## Keeping applications updated
+
+Most of it is not our job, and should not be:
+
+| where the app comes from | who updates it |
+|---|---|
+| nixpkgs (29 of 37 apps) | **nobody** — your own `nix flake update` |
+| pinned in this repo (5) | a weekly bot, opening a PR |
+| `zen` | upstream's own flake |
+
+Brave, VSCode, Steam and the rest follow whatever nixpkgs your flake resolves.
+Nixarchy is not in that path at all.
+
+For the handful pinned here by version and hash, `.github/workflows/update.yml`
+runs `nix run .#update-all` weekly, builds everything it changed, and opens a
+PR. Those PRs are **not** auto-merged: a build proves a package assembles, not
+that it still launches, and two of them are proprietary Electron bundles that
+can do the first without the second.
+
+### Not waiting for us
+
+Every app exposes a `package` option, so a newer version is yours to take
+without a fork or a PR:
+
+```nix
+programs.nixarchy.apps.once.package =
+  nixarchy.packages.${system}.once.overrideAttrs (old: rec {
+    version = "0.4.0";
+    src = pkgs.fetchurl {
+      url = "https://github.com/basecamp/once/releases/download/v${version}/once-linux-amd64";
+      sha256 = "...";
+    };
+  });
+```
+
 ## Design notes
 
 ### Bins are symlinked, not wrapped
