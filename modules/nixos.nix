@@ -76,17 +76,16 @@ in
       withUWSM = true;
     };
 
-    # The single indirection point. bin/, shell/, themes/ and the Hyprland Lua
-    # defaults are all resolved relative to this.
-    environment.sessionVariables.OMARCHY_PATH = "${cfg.package}/share/omarchy";
-    environment.variables.OMARCHY_DEFAULT_THEME = cfg.defaultTheme;
+    environment = {
+      # The single indirection point. bin/, shell/, themes/ and the Hyprland
+      # Lua defaults are all resolved relative to this.
+      sessionVariables.OMARCHY_PATH = "${cfg.package}/share/omarchy";
+      variables.OMARCHY_DEFAULT_THEME = cfg.defaultTheme;
 
-    # Omarchy's scripts are unwrapped by design (wrapping breaks the CLI's
-    # metadata scan), so their dependencies have to be on the session PATH.
-    environment.systemPackages = [
-      cfg.package
-    ]
-    ++ cfg.package.passthru.runtimeDeps;
+      # Omarchy's scripts are unwrapped by design (wrapping breaks the CLI's
+      # metadata scan), so their dependencies have to be on the session PATH.
+      systemPackages = [ cfg.package ] ++ cfg.package.passthru.runtimeDeps;
+    };
 
     # install/config/*.sh and install/config/enable-services.sh, expressed as
     # options instead of the imperative scripts upstream runs once at install.
