@@ -76,15 +76,14 @@
         # holes in it.
         nixarchy-apps =
           let
-            mkElectronDeb = final.callPackage ./pkgs/apps/electron-deb.nix { };
             mkUpdateScript = final.callPackage ./pkgs/apps/update-script.nix { };
           in
           {
-            # One updater per pinned package. `nix run .#update-all` runs the
-            # lot; CI runs it weekly and opens a PR. These exist so that
-            # tracking upstream is a bot's job rather than a maintainer's --
-            # the 29 apps that come from nixpkgs already update themselves
-            # when a user runs `nix flake update`.
+            # One updater per package pinned by version and hash here. Only
+            # `once` is: nixpkgs carries voxtype, t3code and the ChatGPT
+            # desktop now, zen comes from upstream's flake, and grok-bot is
+            # not published as a GitHub release so there is nothing to poll.
+            # Everything else updates when a user runs `nix flake update`.
             updaters = {
               once = mkUpdateScript {
                 pname = "once";
@@ -95,44 +94,10 @@
                   "aarch64-linux" = "https://github.com/basecamp/once/releases/download/v@version@/once-linux-arm64";
                 };
               };
-              t3code = mkUpdateScript {
-                pname = "t3code";
-                file = "pkgs/apps/t3code.nix";
-                repo = "pingdotgg/t3code";
-                artefacts.appimage = "https://github.com/pingdotgg/t3code/releases/download/v@version@/T3-Code-@version@-x86_64.AppImage";
-              };
-              voxtype = mkUpdateScript {
-                pname = "voxtype";
-                file = "pkgs/apps/voxtype.nix";
-                repo = "peteonrails/voxtype";
-                artefacts = builtins.listToAttrs (
-                  map
-                    (v: {
-                      name = v;
-                      value = "https://github.com/peteonrails/voxtype/releases/download/v@version@/voxtype-@version@-linux-x86_64-${v}";
-                    })
-                    [
-                      "avx2"
-                      "avx512"
-                      "onnx-avx2"
-                      "onnx-avx512"
-                      "osd"
-                      "osd-gtk4"
-                      "audio-bridge"
-                    ]
-                );
-              };
             };
 
             once = final.callPackage ./pkgs/apps/once.nix { };
-            t3code = final.callPackage ./pkgs/apps/t3code.nix { };
-            voxtype = final.callPackage ./pkgs/apps/voxtype.nix { };
-            grok-bot = final.callPackage ./pkgs/apps/grok-bot.nix {
-              inherit mkElectronDeb;
-            };
-            openai-codex-desktop = final.callPackage ./pkgs/apps/openai-codex-desktop.nix {
-              inherit mkElectronDeb;
-            };
+            grok-bot = final.callPackage ./pkgs/apps/grok-bot.nix { };
           };
 
         omarchy = final.callPackage ./pkgs/omarchy {
@@ -147,40 +112,16 @@
         default = self.packages.${system}.omarchy;
         inherit (pkgsFor.${system}) omarchy;
 
-        inherit (pkgsFor.${system}.nixarchy-apps)
-          once
-          t3code
-          grok-bot
-          openai-codex-desktop
-          voxtype
-          ;
+        inherit (pkgsFor.${system}.nixarchy-apps) once grok-bot;
 
         # Re-exported so programs.nixarchy.apps.zen resolves like any other
         # `ours` app, without every consumer needing the extra flake input.
         zen-browser = zen-browser.packages.${system}.default;
 
-        # `nix run .#update-all` -- rewrites every pinned version and hash in
-        # place. CI runs this weekly and opens a PR with the result.
-        update-all = pkgsFor.${system}.writeShellApplication {
-          name = "nixarchy-update-all";
-          runtimeInputs = builtins.attrValues pkgsFor.${system}.nixarchy-apps.updaters;
-          text = ''
-            failed=""
-            for u in ${
-              lib.concatStringsSep " " (
-                map (n: "update-${n}") (builtins.attrNames pkgsFor.${system}.nixarchy-apps.updaters)
-              )
-            }; do
-              # One updater failing must not hide the others: a vendor moving a
-              # URL should still leave the remaining bumps to review.
-              "$u" || failed="$failed $u"
-            done
-            if [ -n "$failed" ]; then
-              echo "failed:$failed" >&2
-              exit 1
-            fi
-          '';
-        };
+        # `nix run .#update` -- rewrites the pinned version and hashes in
+        # place. CI runs it weekly and opens a PR. Only `once` is pinned by
+        # hand now; everything else follows nixpkgs or upstream's own flake.
+        update = pkgsFor.${system}.nixarchy-apps.updaters.once;
 
         # Boot the smoke test: `nix run .#vm`
         vm = self.nixosConfigurations.vm.config.system.build.vm;

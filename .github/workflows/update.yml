@@ -22,7 +22,7 @@ jobs:
       - name: Bump pinned packages
         id: bump
         run: |
-          nix run .#update-all
+          nix run .#update
           if git diff --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "nothing to bump"
@@ -40,7 +40,7 @@ jobs:
           # in a user's rebuild. The updater refuses to bump a version without
           # its hashes, but this is the check that actually proves it.
           nix build --impure --print-build-logs \
-            .#once .#t3code .#voxtype .#grok-bot .#openai-codex-desktop
+            .#once .#grok-bot
 
       - name: Open a pull request
         if: steps.bump.outputs.changed == 'true'

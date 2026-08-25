@@ -33,7 +33,7 @@ More in [`docs/screenshots/`](docs/screenshots).
 | **Install menu** | picks write to a Nix config, not pacman |
 | **Remove menu** | deselects apps, never touches your own config |
 | **Update menu** | `nix flake update` + `nixos-rebuild switch --flake` |
-| 37 apps from Omarchy's menu | 29 from nixpkgs, 5 packaged here, 1 from upstream's flake |
+| 37 apps from Omarchy's menu | 30 from nixpkgs, 5 as NixOS modules, 2 packaged here |
 | Learn menu | NixOS wiki, `search.nixos.org` packages and options |
 
 ## Why vendoring
@@ -174,12 +174,12 @@ Most of it is not our job, and should not be:
 
 | where the app comes from | who updates it |
 |---|---|
-| nixpkgs (29 of 37 apps) | **nobody** — your own `nix flake update` |
-| pinned in this repo (5) | a weekly bot, opening a PR |
+| nixpkgs (30 of 37 apps) | **nobody** — your own `nix flake update` |
+| pinned in this repo (2) | a weekly bot, opening a PR |
 | `zen` | upstream's own flake |
 
 For the handful pinned here by version and hash, `.github/workflows/update.yml`
-runs `nix run .#update-all` weekly, builds everything it changed, and opens a
+runs `nix run .#update` weekly, builds everything it changed, and opens a
 PR. Those PRs are **not** auto-merged: a build proves a package assembles, not
 that it still launches, and two of them are proprietary Electron bundles that
 can do the first without the second.
@@ -276,7 +276,7 @@ nix develop                  # or `direnv allow`
 nix build .#omarchy          # fast -- just the vendored tree
 nix flake check              # everything, including a booted session test
 nix run .#vm                 # smoke test
-nix run .#update-all         # bump the pinned packages
+nix run .#update         # bump the pinned packages
 ```
 
 `checks.session` boots a machine, picks two apps through `nixarchy-app-enable`,

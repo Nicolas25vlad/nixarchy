@@ -312,8 +312,7 @@
     menuId = "install.ai.chatgpt";
     label = "ChatGPT Desktop";
     category = "AI";
-    attr = "openai-codex-desktop";
-    ours = true;
+    attr = "chatgpt";
     unfree = true;
     arch = "openai-codex-desktop";
   };
@@ -321,10 +320,7 @@
     menuId = "install.ai.dictation";
     label = "Dictation";
     category = "AI";
-    # CPU variants only; see pkgs/apps/voxtype.nix for why the GPU builds
-    # are left out and how to get one.
     attr = "voxtype";
-    ours = true;
     arch = "voxtype-bin";
   };
   grok-bot = {
@@ -345,7 +341,6 @@
     label = "T3 Code";
     category = "AI";
     attr = "t3code";
-    ours = true;
     arch = "t3code-bin";
   };
   once = {
