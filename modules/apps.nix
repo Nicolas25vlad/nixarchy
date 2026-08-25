@@ -169,6 +169,17 @@ let
           when = "false";
         };
 
+        # Upstream wears the Arch logo here and runs `pacman -Rns` on the
+        # selection. This picks over the app selection instead, and only ever
+        # edits ~/.config/nixarchy/apps.nix -- never the user's own NixOS
+        # configuration, which nixarchy does not own.
+        "remove.package" = {
+          icon = "";
+          label = "App";
+          action = "omarchy-launch-floating-terminal-with-presentation nixarchy-app-remove";
+          description = "Deselect apps, then Apply changes to rebuild without them";
+        };
+
         # Upstream's label is "Omarchy" and its action pulls a git checkout and
         # runs pacman. The action is already replaced (see pkgs/omarchy/nix-bin);
         # this is the label catching up with what it now does.
@@ -253,6 +264,19 @@ let
     )
   );
 
+  # arch package name -> our app id. The generator uses this to find upstream's
+  # remove.* rows, which identify their app by `omarchy-pkg-present <arch>` in
+  # their `when`, and rewrite them to disable the app in the selection instead.
+  archMap = pkgs.writeText "nixarchy-arch-map.json" (
+    builtins.toJSON (
+      lib.listToAttrs (
+        lib.mapAttrsToList (name: app: lib.nameValuePair app.arch name) (
+          lib.filterAttrs (_: a: a ? arch) available
+        )
+      )
+    )
+  );
+
   # Built with a script rather than string-concatenated in Nix, because it has
   # to read upstream's menu to carry each row's label and icon across.
   #
@@ -265,14 +289,14 @@ let
     pkgs.runCommand "nixarchy-omarchy-menu.jsonc"
       {
         nativeBuildInputs = [ pkgs.python3 ];
-        inherit overrideSpec;
+        inherit overrideSpec archMap;
         upstreamMenu = "${cfg.package}/share/omarchy/default/omarchy/omarchy-menu.jsonc";
       }
       ''
-        python3 - "$upstreamMenu" "$overrideSpec" "$out" <<'PY'
+        python3 - "$upstreamMenu" "$overrideSpec" "$archMap" "$out" <<'PY'
         import json, re, sys
 
-        upstream_path, spec_path, out_path = sys.argv[1:4]
+        upstream_path, spec_path, archmap_path, out_path = sys.argv[1:5]
 
         def strip_jsonc(raw):
             # The same two transformations MenuModel.js applies.
@@ -281,6 +305,31 @@ let
 
         upstream = json.loads(strip_jsonc(open(upstream_path).read()))
         overrides = json.load(open(spec_path))
+        arch_map = json.load(open(archmap_path))
+
+        # Upstream's remove.* rows name their app only in their `when`, as
+        # `omarchy-pkg-present <arch-package>`. Deriving the overrides from
+        # that keeps them tracking upstream instead of being hand-listed here,
+        # and means a row upstream adds is picked up on the next bump.
+        for row_id, row in upstream.items():
+            if not row_id.startswith("remove.") or row_id in overrides:
+                continue
+            m = re.search(r"omarchy-pkg-present\s+([a-z0-9._@+-]+)", str(row.get("when", "")))
+            if not m:
+                continue
+            app = arch_map.get(m.group(1))
+            if not app:
+                continue
+            overrides[row_id] = {
+                "action": f"nixarchy-app-disable {app}",
+                # Show the row only when the app is actually selected, which is
+                # what upstream's `omarchy-pkg-present` meant.
+                "when": (
+                    "grep -qE '^[[:space:]]*" + app
+                    + "\\.enable' $HOME/.config/nixarchy/apps.nix"
+                ),
+                "description": "Remove from your app selection, then Apply changes",
+            }
 
         out = {}
         missing = []
@@ -434,6 +483,87 @@ in
               fi
               echo "enabled $id in $file ($queued queued)"
               echo "run 'nixarchy-apply' when you have picked everything you want"
+            '';
+          })
+
+          # The inverse of nixarchy-app-enable: re-comments the line. It only
+          # ever touches ~/.config/nixarchy/apps.nix -- never the user's own
+          # NixOS configuration, which nixarchy does not own and must not
+          # edit. An app stays installed until a rebuild runs.
+          (pkgs.writeShellApplication {
+            name = "nixarchy-app-disable";
+            runtimeInputs = [
+              pkgs.gnused
+              pkgs.gnugrep
+              pkgs.coreutils
+              cfg.package
+            ];
+            text = ''
+              file="''${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy/apps.nix"
+              id="''${1:?usage: nixarchy-app-disable <app-id>}"
+
+              [ -f "$file" ] || { echo "no $file" >&2; exit 1; }
+
+              if ! grep -qE "#@ $id([[:space:]]|\$)" "$file"; then
+                echo "nixarchy: no app '$id' in $file" >&2
+                exit 1
+              fi
+
+              if ! grep -qE "^[[:space:]]*$id\.enable" "$file"; then
+                echo "$id is not enabled"
+                exit 0
+              fi
+
+              # Comment the line back out, preserving its indentation.
+              sed -i -E "/#@ $id([[:space:]]|\$)/ s/^([[:space:]]*)([^[:space:]#])/\1# \2/" "$file"
+
+              queued=$(grep -cE "^[[:space:]]*[a-z0-9_-]+\.enable" "$file" || true)
+              if command -v omarchy-notification-send >/dev/null 2>&1; then
+                omarchy-notification-send -r 8471 -t 8000 -u normal \
+                  "$id removed from your selection" \
+                  "$queued app(s) still selected. Click here to run nixos-rebuild and apply it." \
+                  --exec omarchy-launch-floating-terminal-with-presentation nixarchy-apply || true
+              fi
+              echo "disabled $id in $file ($queued still enabled)"
+              echo "it stays installed until 'nixarchy-apply' rebuilds"
+            '';
+          })
+
+          # An interactive picker over what is currently selected, for the
+          # Remove > Package row. Upstream offers a fuzzy picker over installed
+          # pacman packages; this is the same shape over the app selection.
+          (pkgs.writeShellApplication {
+            name = "nixarchy-app-remove";
+            runtimeInputs = [
+              pkgs.gnugrep
+              pkgs.gnused
+              pkgs.coreutils
+              pkgs.fzf
+            ];
+            text = ''
+              file="''${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy/apps.nix"
+              [ -f "$file" ] || { echo "no $file" >&2; exit 1; }
+
+              mapfile -t enabled < <(
+                grep -oE "^[[:space:]]*[a-z0-9_-]+\.enable" "$file" \
+                  | sed -E 's/[[:space:]]*//; s/\.enable//'
+              )
+              if [ ''${#enabled[@]} -eq 0 ]; then
+                echo "Nothing is selected. Install > Package lists what is available."
+                exit 0
+              fi
+
+              chosen=$(printf '%s\n' "''${enabled[@]}" | fzf --multi \
+                --prompt="remove > " \
+                --header="tab to select several, enter to confirm") || exit 0
+              [ -n "$chosen" ] || exit 0
+
+              while IFS= read -r app; do
+                [ -n "$app" ] && nixarchy-app-disable "$app"
+              done <<< "$chosen"
+
+              echo
+              echo "Run 'nixarchy-apply' to rebuild without them."
             '';
           })
 
