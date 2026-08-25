@@ -93,6 +93,7 @@
   tldr,
   inxi,
   ffmpegthumbnailer,
+  vips,
 }:
 let
   # Everything the 438 scripts in bin/ invoke. Kept explicit rather than
@@ -188,6 +189,7 @@ let
     tldr
     inxi # omarchy-debug
     ffmpegthumbnailer # nautilus thumbnails
+    vips # omarchy-menu-images, the wallpaper picker, shells out to `vips`
   ];
 in
 stdenvNoCC.mkDerivation {

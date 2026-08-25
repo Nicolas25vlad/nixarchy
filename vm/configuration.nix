@@ -85,6 +85,38 @@
   # graphical session is the thing that is broken.
   boot.kernelParams = [ "console=ttyS0" ];
 
+  # The whole point of this VM is diagnosing a session that will not come up,
+  # and the interesting logs are in a user journal nobody can reach without
+  # logging in. Push them to the serial console instead.
+  #
+  # omarchy-launch-shell pipes QuickShell through `systemd-cat -t
+  # omarchy-shell`, supervises it, and gives up after 5 relaunches inside a
+  # minute -- so "the panel shows for a few seconds then dies" leaves its
+  # reason here and nowhere else.
+  systemd.services.nixarchy-debug-journal = {
+    description = "Stream the Omarchy session journal to the serial port";
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      # Written straight to the serial PORT, not to "console". Once a GPU
+      # device is present the kernel makes tty0 the console and anything sent
+      # there never reaches -serial, which is why two earlier attempts to read
+      # this over a serial line came back with a login prompt and nothing else.
+      StandardOutput = "tty";
+      StandardError = "tty";
+      TTYPath = "/dev/ttyS0";
+      Restart = "always";
+      RestartSec = 5;
+    };
+    script = ''
+      echo "[nixarchy] streaming omarchy-shell + session journal"
+      # omarchy-launch-shell pipes QuickShell through `systemd-cat -t
+      # omarchy-shell` and gives up after 5 relaunches inside a minute, so a
+      # panel that appears and then vanishes explains itself here.
+      exec journalctl -f -b --no-pager -t omarchy-shell -t Hyprland -t uwsm \
+        _UID=1000 --output=short-monotonic
+    '';
+  };
+
   networking = {
     hostName = "nixarchy-vm";
     firewall.enable = lib.mkForce false;

@@ -122,6 +122,13 @@
       checks = eachSystem (system: {
         omarchy = self.packages.${system}.omarchy;
         inherit (self.packages.${system}) omarchy-runtime;
+
+        # Drives a real session and reports what it logged. See tests/session.nix
+        # for why neither a serial console nor the smoke-test VM can do this.
+        session = import ./tests/session.nix {
+          inherit inputs;
+          pkgs = pkgsFor.${system};
+        };
         vm-toplevel = self.nixosConfigurations.vm.config.system.build.toplevel;
       });
     };

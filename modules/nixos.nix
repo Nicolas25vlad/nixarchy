@@ -16,8 +16,8 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.omarchy;
-      defaultText = lib.literalExpression "pkgs.omarchy";
+      default = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.omarchy;
+      defaultText = lib.literalExpression "nixarchy.packages.\${system}.omarchy";
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 
@@ -53,12 +53,6 @@ in
         '';
       }
     ];
-
-    # Carried by the module so that importing nixosModules.nixarchy is all a
-    # consumer has to do -- without this, `pkgs.omarchy` only exists inside
-    # this flake's own package set and every downstream config has to wire the
-    # overlay up by hand.
-    nixpkgs.overlays = [ inputs.self.overlays.default ];
 
     nix.settings = lib.mkIf cfg.useHyprlandCache {
       substituters = [ "https://hyprland.cachix.org" ];

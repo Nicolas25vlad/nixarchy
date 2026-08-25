@@ -1,4 +1,4 @@
-_inputs:
+inputs:
 {
   config,
   lib,
@@ -15,8 +15,8 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.omarchy;
-      defaultText = lib.literalExpression "pkgs.omarchy";
+      default = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.omarchy;
+      defaultText = lib.literalExpression "nixarchy.packages.\${system}.omarchy";
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 

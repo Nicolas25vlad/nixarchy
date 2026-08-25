@@ -90,6 +90,14 @@ jobs:
 
   system:
     runs-on: ubuntu-latest
+    # Its own concurrency group, and NOT cancel-in-progress. This job builds
+    # Hyprland from source and takes ~20 minutes, so under the workflow-level
+    # cancel-in-progress it is killed by any push landing within that window
+    # -- which meant the most valuable check in this workflow routinely never
+    # completed. Queue it behind the previous one instead of discarding it.
+    concurrency:
+      group: ${{ github.workflow }}-system-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@main
