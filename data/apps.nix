@@ -285,21 +285,27 @@
     menuId = "install.gaming.minecraft";
     label = "Minecraft";
     category = "Gaming";
-    unavailable = "Use prismlauncher, which nixpkgs packages and maintains.";
+    # nixpkgs removed `minecraft` as broken and its own error message says
+    # to use prismlauncher, so this is nixpkgs' recommendation rather than a
+    # substitution invented here.
+    attr = "prismlauncher";
     arch = "minecraft-launcher";
   };
   zen = {
     menuId = "install.browser.zen";
     label = "Zen";
     category = "Browser";
-    unavailable = "Not in nixpkgs; upstream ships a flake at github:0xc000022070/zen-browser-flake.";
+    # Upstream's own flake, not a derivation here: it tracks Zen's releases
+    # far more closely than we could.
+    attr = "zen-browser";
+    ours = true;
     arch = "zen-browser-bin";
   };
   brave-origin = {
     menuId = "install.browser.brave-origin";
     label = "Brave Origin";
     category = "Browser";
-    unavailable = "AUR-only build of Brave; use apps.brave.";
+    unavailable = "Brave's managed build is AUR-only with no published source; enable apps.brave and put policies in /etc/brave/policies/managed, which stock Brave honours identically.";
     arch = "brave-origin-bin";
   };
   chatgpt = {
@@ -315,7 +321,10 @@
     menuId = "install.ai.dictation";
     label = "Dictation";
     category = "AI";
-    unavailable = "voxtype is AUR-only and not yet packaged for nixpkgs.";
+    # CPU variants only; see pkgs/apps/voxtype.nix for why the GPU builds
+    # are left out and how to get one.
+    attr = "voxtype";
+    ours = true;
     arch = "voxtype-bin";
   };
   grok-bot = {

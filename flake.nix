@@ -36,6 +36,13 @@
       url = "github:basecamp/omarchy/v4.0.1";
       flake = false;
     };
+
+    # Zen is not in nixpkgs and upstream maintains its own flake, which tracks
+    # Zen's releases far more closely than a derivation here ever would.
+    zen-browser = {
+      url = "github:0xc000022070/zen-browser-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -46,6 +53,7 @@
       home-manager,
       hyprland,
       omarchy,
+      zen-browser,
       ...
     }@inputs:
     let
@@ -73,6 +81,7 @@
           {
             once = final.callPackage ./pkgs/apps/once.nix { };
             t3code = final.callPackage ./pkgs/apps/t3code.nix { };
+            voxtype = final.callPackage ./pkgs/apps/voxtype.nix { };
             grok-bot = final.callPackage ./pkgs/apps/grok-bot.nix {
               inherit mkElectronDeb;
             };
@@ -98,7 +107,12 @@
           t3code
           grok-bot
           openai-codex-desktop
+          voxtype
           ;
+
+        # Re-exported so programs.nixarchy.apps.zen resolves like any other
+        # `ours` app, without every consumer needing the extra flake input.
+        zen-browser = zen-browser.packages.${system}.default;
 
         # Boot the smoke test: `nix run .#vm`
         vm = self.nixosConfigurations.vm.config.system.build.vm;
