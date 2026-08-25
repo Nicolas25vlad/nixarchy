@@ -28,6 +28,8 @@
     };
   };
 
+  users.users.root.password = "omarchy"; # VM-only.
+
   users.users.omarchy = {
     isNormalUser = true;
     description = "Nixarchy smoke test";
@@ -54,10 +56,33 @@
     WLR_NO_HARDWARE_CURSORS = "1";
   };
 
+  # SSH, so the VM can be driven and inspected from the host. Debugging a
+  # desktop that will not come up through screenshots alone is slow, and the
+  # journal that explains it lives in a user session nobody can reach.
+  #
+  # VM-only settings: password auth with a known password, on a port forwarded
+  # to localhost. Never copy this into a real host.
+  services.openssh = {
+    enable = true;
+    settings = {
+      PasswordAuthentication = true;
+      PermitRootLogin = "yes";
+    };
+  };
+
   virtualisation = {
     memorySize = 8192;
     cores = 4;
     diskSize = 16384;
+
+    # ssh -p 2222 omarchy@localhost   (password: omarchy)
+    forwardPorts = [
+      {
+        from = "host";
+        host.port = 2222;
+        guest.port = 22;
+      }
+    ];
 
     # Ephemeral root. `nix run .#vm` otherwise creates nixarchy-vm.qcow2 in
     # the working directory and REUSES it on every later run, which makes a
