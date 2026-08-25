@@ -77,6 +77,17 @@
 
         # Boot the smoke test: `nix run .#vm`
         vm = self.nixosConfigurations.vm.config.system.build.vm;
+
+        # Every command the vendored scripts exec by name, in one prefix.
+        # The bins are unwrapped on purpose, so an incomplete runtimeDeps list
+        # produces a package that builds cleanly and then fails at the click
+        # -- which is how `Command not found: xdg-terminal-exec` shipped.
+        # CI builds this and asserts the binaries are actually in it.
+        omarchy-runtime = pkgsFor.${system}.buildEnv {
+          name = "omarchy-runtime";
+          paths = pkgsFor.${system}.omarchy.passthru.runtimeDeps;
+          ignoreCollisions = true;
+        };
       });
 
       nixosModules = {
@@ -110,6 +121,7 @@
 
       checks = eachSystem (system: {
         omarchy = self.packages.${system}.omarchy;
+        inherit (self.packages.${system}) omarchy-runtime;
         vm-toplevel = self.nixosConfigurations.vm.config.system.build.toplevel;
       });
     };

@@ -75,21 +75,14 @@ in
       );
     };
 
-    # default/systemd/user/*.service -- upstream ships 10 user units. Only the
-    # shell supervisor is wired up here; the rest are opt-in until the smoke
-    # test says which actually matter on NixOS.
-    systemd.user.services.omarchy-shell = {
-      Unit = {
-        Description = "Omarchy QuickShell desktop shell";
-        PartOf = [ "graphical-session.target" ];
-        After = [ "graphical-session.target" ];
-      };
-      Service = {
-        ExecStart = "${cfg.package}/bin/omarchy-launch-shell";
-        Environment = [ "OMARCHY_PATH=${omarchyPath}" ];
-        Restart = "on-failure";
-      };
-      Install.WantedBy = [ "graphical-session.target" ];
-    };
+    # No systemd unit for the shell. Upstream starts it from Hyprland itself:
+    #
+    #   default/hypr/autostart.lua
+    #   hl.on("hyprland.start", function() hl.exec_cmd("omarchy-launch-shell") end)
+    #
+    # A graphical-session.target unit runs before the compositor is up, and
+    # omarchy-launch-shell responds to that by exiting 0 -- see its
+    # compositor_alive() guard. The unit therefore "succeeded" while starting
+    # nothing, and duplicated a launch Hyprland was already doing correctly.
   };
 }

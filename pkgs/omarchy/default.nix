@@ -62,6 +62,23 @@
   tmux,
   inotify-tools,
   python3,
+
+  # Application tier. These are commands the bins invoke directly, not
+  # libraries: omarchy-launch-terminal execs `uwsm-app -- xdg-terminal-exec`,
+  # theme-set retints whichever terminals are present, and the menus launch
+  # the file manager, browser and editor by name.
+  xdg-terminal-exec,
+  uwsm,
+  foot,
+  chromium,
+  nautilus,
+  neovim,
+  mise,
+  lazygit,
+  lazydocker,
+  eza,
+  zoxide,
+  starship,
 }:
 let
   # Everything the 438 scripts in bin/ invoke. Kept explicit rather than
@@ -116,6 +133,28 @@ let
     tmux
     inotify-tools
     python3
+
+    # Application tier. Omitted from the first cut of this list, which is why
+    # every terminal launch failed with `Command not found: xdg-terminal-exec`
+    # while the bar itself rendered fine -- the utility tier was complete and
+    # the application tier was entirely absent.
+    #
+    # foot is the only terminal in upstream's base.packages, so it is the one
+    # xdg-terminal-exec resolves to by default. alacritty, ghostty and kitty
+    # are supported by upstream's theming but not installed by it; add them
+    # through environment.systemPackages if you want one of those instead.
+    xdg-terminal-exec
+    uwsm
+    foot
+    chromium
+    nautilus
+    neovim
+    mise
+    lazygit
+    lazydocker
+    eza
+    zoxide
+    starship
   ];
 in
 stdenvNoCC.mkDerivation {
