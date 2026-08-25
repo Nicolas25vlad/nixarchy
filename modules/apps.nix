@@ -217,23 +217,24 @@ let
           when = "false";
         };
 
-        # The Arch wiki is the wrong manual on a NixOS host. Icon and label are
-        # set explicitly here because the generator only carries upstream's
-        # across when an override does not state its own.
+        # The Arch wiki is the wrong manual on a NixOS host. All three wear
+        # nf-linux-nixos (U+F1105), the snowflake -- the icon and label are
+        # stated explicitly because the generator only carries upstream's
+        # across when an override does not bring its own.
         "learn.arch" = {
-          icon = "󰧑";
+          icon = "󱄅";
           label = "NixOS";
           action = "omarchy-launch-webapp 'https://wiki.nixos.org/'";
           description = "NixOS Wiki";
         };
         "learn.nixpkgs" = {
-          icon = "󰉉";
+          icon = "󱄅";
           label = "Nixpkgs";
           action = "omarchy-launch-webapp 'https://search.nixos.org/packages'";
           description = "Search for a package";
         };
         "learn.nix-options" = {
-          icon = "󰧑";
+          icon = "󱄅";
           label = "NixOS Options";
           action = "omarchy-launch-webapp 'https://search.nixos.org/options'";
           description = "Search NixOS configuration options";
