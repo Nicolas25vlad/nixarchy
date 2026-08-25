@@ -14,9 +14,9 @@ Tracking an upstream release is a source bump, not a re-port.
 
 | the menu | Install |
 |---|---|
-| ![menu](docs/screenshots/01-menu-root.png) | ![install](docs/screenshots/02-install.png) |
+| ![menu](docs/screenshots/01-menu-root.jpg) | ![install](docs/screenshots/02-install.jpg) |
 | **Remove** | **Update** |
-| ![remove](docs/screenshots/09-remove.png) | ![update](docs/screenshots/10-update.png) |
+| ![remove](docs/screenshots/09-remove.jpg) | ![update](docs/screenshots/10-update.jpg) |
 
 More in [`docs/screenshots/`](docs/screenshots).
 
@@ -175,7 +175,11 @@ compositor's frames, page flips never complete, and `grim` blocks forever.
 
 ```sh
 ssh -p 2222 omarchy@localhost 'bash -s' < docs/capture-screenshots.sh
-scp -P 2222 'omarchy@localhost:~/nixarchy-screenshots/*.png' docs/screenshots/
+scp -P 2222 'omarchy@localhost:~/nixarchy-screenshots/*.png' /tmp/shots/
+# they are photographic, so the repo keeps them as jpg
+for f in /tmp/shots/*.png; do
+  magick "$f" -resize 1600x -quality 86 "docs/screenshots/$(basename "${f%.png}").jpg"
+done
 ```
 
 ## Staying current with Omarchy
