@@ -98,6 +98,34 @@
 
             once = final.callPackage ./pkgs/apps/once.nix { };
             grok-bot = final.callPackage ./pkgs/apps/grok-bot.nix { };
+
+            # nixpkgs' `retroarch` is `retroarch-with-cores` built with an
+            # EMPTY core list, so installing it gives an emulator that can run
+            # nothing. `retroarch-full` is the obvious fix and the wrong one:
+            # it pulls unfree cores, and an unfree package in the app list
+            # aborts the whole rebuild rather than failing on its own.
+            #
+            # So: every core Omarchy's own picker offers that nixpkgs ships
+            # under a free licence, minus the two that dwarf the rest.
+            # snes9x and genesis-plus-gx are unfree, hence bsnes and blastem
+            # for those systems.
+            retroarch = final.retroarch.withCores (
+              cores: map (n: cores.${n}) [
+                "bsnes" # SNES
+                "mesen" # NES
+                "gambatte" # Game Boy / Color
+                "mgba" # Game Boy Advance
+                "blastem" # Mega Drive / Genesis
+                "beetle-pce-fast" # PC Engine
+                "beetle-psx-hw" # PlayStation
+                "parallel-n64" # Nintendo 64
+                "desmume" # Nintendo DS
+                "flycast" # Dreamcast
+                "ppsspp" # PSP
+                "puae" # Amiga
+                "vice-x64" # Commodore 64
+              ]
+            );
           };
 
         omarchy = final.callPackage ./pkgs/omarchy {
@@ -112,7 +140,7 @@
         default = self.packages.${system}.omarchy;
         inherit (pkgsFor.${system}) omarchy;
 
-        inherit (pkgsFor.${system}.nixarchy-apps) once grok-bot;
+        inherit (pkgsFor.${system}.nixarchy-apps) once grok-bot retroarch;
 
         # Re-exported so programs.nixarchy.apps.zen resolves like any other
         # `ours` app, without every consumer needing the extra flake input.

@@ -246,8 +246,18 @@
     menuId = "install.gaming.retroarch";
     label = "RetroArch";
     category = "Gaming";
+    # Not plain `pkgs.retroarch`: that is `retroarch-with-cores` built with no
+    # cores at all, so it installs cleanly and then emulates nothing.
     attr = "retroarch";
+    ours = true;
     arch = "retroarch";
+    note = ''
+      Ships 13 free cores. For more -- including snes9x, genesis-plus-gx, mame
+      and dolphin, which nixpkgs marks unfree -- set allowUnfree and override
+      the package:
+        apps.retroarch.package =
+          pkgs.retroarch.withCores (c: [ c.snes9x c.mame c.dolphin ]);
+    '';
   };
   xbox-controllers = {
     menuId = "install.gaming.xbox-controllers";

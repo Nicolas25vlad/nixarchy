@@ -89,7 +89,9 @@
   alsa-utils,
   imv,
   evince,
+  libretro-core-info,
   localsend,
+  runCommand,
   tldr,
   inxi,
   ffmpegthumbnailer,
@@ -194,7 +196,13 @@ let
     alsa-utils # amixer/alsamixer
     imv # image viewer the menus open
     evince # PDF viewer
-    localsend
+    # nixpkgs names the binary localsend_app; omarchy-menu-share and the
+    # Nautilus extension both look for `localsend`. Without the alias, Share ->
+    # Receive reports: Command not found: "localsend"
+    (runCommand "localsend-alias" { } ''
+      mkdir -p $out/bin
+      ln -s ${localsend}/bin/localsend_app $out/bin/localsend
+    '')
     tldr
     inxi # omarchy-debug
     ffmpegthumbnailer # nautilus thumbnails
@@ -345,6 +353,17 @@ stdenvNoCC.mkDerivation {
           '{~/.local,~/.nix-profile,/etc/profiles/per-user/$USER,/run/current-system/sw,/usr}/share/applications'
     done
 
+    # RetroArch loads its cores from /usr/lib/libretro upstream. nixpkgs puts
+    # them inside the wrapper's own store path -- and which cores exist depends
+    # on how the package was built -- so the directory has to be resolved at
+    # runtime. Without this, RetroArch installs and then reports
+    #
+    #   No RetroArch cores found   /usr/lib/libretro
+    for f in omarchy-games-retro-install omarchy-install-gaming-retroarch; do
+      substituteInPlace $out/share/omarchy/bin/$f \
+        --replace-quiet '/usr/lib/libretro' '$(omarchy-retroarch-cores)'
+    done
+
     # Replace the bins that drive pacman. These are not reachable through the
     # menu extension: the shell's bar widget and its "Update System"
     # notification call omarchy-update directly from QML, so overriding a menu
@@ -355,12 +374,15 @@ stdenvNoCC.mkDerivation {
     for replacement in ${./nix-bin}/*; do
       name=$(basename "$replacement")
       target=$out/share/omarchy/bin/$name
-      if [ ! -e "$target" ]; then
+      if [ ! -e "$target" ] && ! grep -q '^# nixarchy:new' "$replacement"; then
         echo "nix-bin/$name replaces nothing in this Omarchy version" >&2
         exit 1
       fi
       install -Dm755 "$replacement" "$target"
     done
+
+    substituteInPlace $out/share/omarchy/bin/omarchy-games-retro-cores \
+      --replace-fail '@info@' '${libretro-core-info}/share/retroarch/cores'
 
     # Wear the snowflake.
     substitute ${./menu-bar-widget.qml} \
