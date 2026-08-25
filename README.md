@@ -188,8 +188,7 @@ v4.0.0 -> v4.0.1
   ✓ every substituteInPlace anchor still matches   (--replace-fail)
   ✓ every menu row it overrides still exists
   ✓ all 37 Install rows are still mapped in data/apps.nix
-  ✓ the full system closure builds
-  ✓ a booted session renders its wallpaper
+  ✓ a booted session renders its wallpaper   (delta 10, threshold 120)
 ```
 
 Each line is a different way upstream can break this port, and each has caught
@@ -199,8 +198,8 @@ wider than `GL_MAX_TEXTURE_SIZE` draws nothing at all while Qt still reports
 the image `Ready`. So the session test boots a machine, screenshots it through
 qemu, and compares the screen's average colour to the wallpaper's own.
 
-When a check fails, the run summary names which of them broke and which file
-to edit. **A new app in Omarchy's Install menu is usually one line** in
+If they all pass, the bump merges itself. When one fails, the run summary
+names which of them broke and which file to edit. **A new app in Omarchy's Install menu is usually one line** in
 `data/apps.nix` — `attr` for a plain nixpkgs package, `option` for something
 that needs a NixOS module. The menu rewiring and its Remove row are generated
 from that entry.

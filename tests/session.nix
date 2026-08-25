@@ -39,8 +39,11 @@ pkgs.testers.runNixOSTest {
     boot.plymouth.enable = pkgs.lib.mkForce false;
     services.displayManager.sddm.enable = pkgs.lib.mkForce false;
 
-    # A GPU so the DRM backend is available, as it is on a real machine.
-    virtualisation.qemu.options = [ "-device virtio-gpu-pci" ];
+    # No extra GPU device. qemu-vm already gives the machine a display, and
+    # machine.screenshot() dumps *that* one -- adding a second sent Hyprland
+    # to the new device while the screenshot kept reading the original, which
+    # came back pure black and made the wallpaper check fail on a machine
+    # whose desktop was fine.
 
     # Launch Hyprland from the autologin shell, which is where the seat is.
     programs.bash.loginShellInit = ''

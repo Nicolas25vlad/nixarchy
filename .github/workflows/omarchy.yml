@@ -70,7 +70,20 @@ jobs:
           print(f"all {len(wanted)} Install rows still mapped")
           PY
 
-      - name: Build the system closure
+      # Booting the session builds the closure on the way, so there is no
+      # separate closure step: it would double an hour-long Hyprland compile
+      # to prove a strict subset of this.
+      #
+      # This is also the check that earns the auto-merge below. Everything
+      # before it proves the tree assembles; this screenshots a running
+      # desktop through qemu and compares the screen's average colour to the
+      # wallpaper's own.
+      #
+      # Without it a green run meant very little: the desktop once rendered
+      # pure black while every other check here passed, because a wallpaper
+      # wider than GL_MAX_TEXTURE_SIZE draws nothing at all and Qt still
+      # reports the image Ready.
+      - name: Boot a session and check the desktop renders
         if: steps.rel.outputs.changed == 'true'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc "$AGENT_TOOLSDIRECTORY"
@@ -79,19 +92,7 @@ jobs:
           extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE=
           EOF
           sudo systemctl restart nix-daemon || true
-          nix build .#checks.x86_64-linux.vm-toplevel --print-build-logs
-
-      # The check that earns the auto-merge below. Everything before it proves
-      # the tree assembles; this boots a machine, screenshots it through qemu
-      # and compares the screen's average colour to the wallpaper's own.
-      #
-      # Without it a green run meant very little: the desktop once rendered
-      # pure black while every other check here passed, because a wallpaper
-      # wider than GL_MAX_TEXTURE_SIZE draws nothing at all and Qt still
-      # reports the image Ready.
-      - name: Boot a session and check the desktop renders
-        if: steps.rel.outputs.changed == 'true'
-        run: nix build .#checks.x86_64-linux.session --print-build-logs
+          nix build .#checks.x86_64-linux.session --print-build-logs
 
       - name: Open a pull request
         if: steps.rel.outputs.changed == 'true'
@@ -111,7 +112,6 @@ jobs:
             - every `substituteInPlace` anchor still matches
             - every menu row it overrides still exists
             - all Install rows are still mapped in `data/apps.nix`
-            - the full system closure builds
             - **a booted session renders its wallpaper**
 
             If something is wrong anyway, roll back with
