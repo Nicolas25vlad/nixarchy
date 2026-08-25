@@ -27,6 +27,16 @@ if [ ! -d "$flake" ]; then
   exit 1
 fi
 
+if [ ! -w "$flake" ]; then
+  red "$flake is not writable by $USER."
+  echo
+  echo "Updating a flake rewrites its flake.lock, so the directory has to be"
+  echo "yours. Either move your configuration somewhere you own, or:"
+  echo
+  echo "  sudo chown -R $USER $flake"
+  exit 1
+fi
+
 echo "Updating from $flake"
 echo
 dim "This moves your flake inputs forward -- nixpkgs, nixarchy and Omarchy"

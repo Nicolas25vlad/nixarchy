@@ -152,7 +152,21 @@
     if [ ! -e /etc/nixos/nixarchy-apps.nix ]; then
       printf '{ ... }:\n{ }\n' > /etc/nixos/nixarchy-apps.nix
     fi
+
+    # Owned by the user, because `nix flake update` runs unprivileged and a
+    # root-owned flake makes it fail on the lock file:
+    #
+    #   error: opening file "/etc/nixos/flake.lock": Permission denied
+    #
+    # On a real host the flake usually lives in the user's home and is already
+    # theirs; /etc/nixos being root-owned is what makes this VM the odd one.
+    chown -R omarchy:users /etc/nixos
   '';
+
+  # Passwordless sudo, so a rebuild driven from the menu does not stall on a
+  # password prompt in a terminal that may not have focus. Acceptable only
+  # because this VM is a throwaway; a real host should keep its prompt.
+  security.sudo.wheelNeedsPassword = false;
 
   # Unfree is on because most of what the Install menu offers is unfree, and
   # discovering that through a licence error mid-rebuild helps nobody.

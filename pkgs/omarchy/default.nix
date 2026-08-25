@@ -249,6 +249,21 @@ stdenvNoCC.mkDerivation {
     install -Dm644 default/fonts/omarchy/omarchy.ttf \
       $out/share/fonts/truetype/omarchy.ttf
 
+    # $OMARCHY_THEMES_PATH is a store path, and `cp -r` preserves its modes --
+    # including r-xr-xr-x on directories. Upstream copies the chosen theme
+    # into ~/.local/state/omarchy/current/theme, so on NixOS that staging
+    # directory lands read-only and the NEXT theme switch cannot clean it up:
+    #
+    #   rm: cannot remove '.../current/theme/backgrounds/0-winding-road.jpg':
+    #   Permission denied
+    #
+    # On Arch the source lives in /usr/share with writable modes, so upstream
+    # never has to think about it.
+    substituteInPlace $out/share/omarchy/bin/omarchy-theme-set \
+      --replace-fail \
+        'cp -r "$OMARCHY_THEMES_PATH/$THEME_NAME/"* "$NEXT_THEME_PATH/"' \
+        'cp -r --no-preserve=mode "$OMARCHY_THEMES_PATH/$THEME_NAME/"* "$NEXT_THEME_PATH/"'
+
     # Replace the bins that drive pacman. These are not reachable through the
     # menu extension: the shell's bar widget and its "Update System"
     # notification call omarchy-update directly from QML, so overriding a menu
