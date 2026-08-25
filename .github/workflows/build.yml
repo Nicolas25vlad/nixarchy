@@ -63,6 +63,32 @@ jobs:
           # catch a bin we replace drifting out of the CLI's index.
           result/bin/omarchy commands --check
 
+      # The README quotes app counts in four places. They are derivable from
+      # data/apps.nix, and they silently went stale twice -- once when an app
+      # was added, once when RetroArch moved to being built here -- so derive
+      # them and fail rather than trust prose.
+      - name: Check the README's app counts still match data/apps.nix
+        run: |
+          eval "$(nix eval --raw --impure --expr '
+            let lib = (builtins.getFlake (toString ./.)).inputs.nixpkgs.lib;
+                a = import ./data/apps.nix;
+                c = f: toString (lib.length (lib.attrNames (lib.filterAttrs f a)));
+            in "total=" + toString (lib.length (lib.attrNames a))
+             + " mod=" + c (_: x: x ? option)
+             + " ours=" + c (_: x: x.ours or false)
+             + " un=" + c (_: x: x ? unavailable)
+          ')"
+          nixpkgs=$(( total - mod - ours - un ))
+          free=$(( nixpkgs + mod ))
+          echo "total=$total nixpkgs=$nixpkgs modules=$mod ours=$ours unavailable=$un"
+
+          fail=0
+          check() { grep -qF "$1" README.md || { echo "::error::README is missing: $1"; fail=1; }; }
+          check "| $total apps from Omarchy's menu | $nixpkgs from nixpkgs, $mod as NixOS modules, $ours built here, $un with no equivalent |"
+          check "**$free of the $total apps never touch this repo.**"
+          check "| nixpkgs ($free of $total apps) | "
+          exit $fail
+
       - name: Verify shebangs were patched
         run: |
           # Line 1 only. Several scripts legitimately contain `#!/bin/bash`

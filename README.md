@@ -29,7 +29,7 @@ More in [`docs/screenshots/`](docs/screenshots).
 | **Install menu** | picks write to a Nix config, not pacman |
 | **Remove menu** | deselects apps, never touches your own config |
 | **Update menu** | `nix flake update` + `nixos-rebuild switch --flake` |
-| 37 apps from Omarchy's menu | 30 from nixpkgs, 5 as NixOS modules, 2 packaged here |
+| 38 apps from Omarchy's menu | 27 from nixpkgs, 5 as NixOS modules, 4 built here, 2 with no equivalent |
 | Learn menu | NixOS wiki, `search.nixos.org` packages and options |
 | Shell functions | the rc chain sourced into interactive bash |
 | RetroArch | 13 libretro cores, resolved from the store rather than `/usr/lib` |
@@ -100,6 +100,7 @@ list would have been quietly wrong:
 | 1Password | `programs._1password-gui` — a setuid helper, or it cannot unlock |
 | Tailscale | `services.tailscale` — a daemon |
 | Xbox controllers | `hardware.xpadneo` — a kernel driver |
+| Firefox | `programs.firefox` — so policies and extensions stay declarative |
 
 `data/apps.nix` records which is which, and per-app `settings` merge at that
 app's own option path:
@@ -241,10 +242,12 @@ done
 
 Almost nothing here waits on a maintainer.
 
-**30 of the 37 apps never touch this repo.** Brave, VSCode, Steam, Signal and
-the rest are installed as `pkgs.<name>` from **your** nixpkgs. Your own
-`nix flake update` moves them. Nixarchy is not in that path, so there is
-nobody to wait for.
+**32 of the 38 apps never touch this repo.** Brave, VSCode, Signal and the rest
+are installed as `pkgs.<name>` from **your** nixpkgs, and the five
+module-backed ones (Steam, 1Password, Tailscale, Firefox, Xbox controllers)
+come from there too — the module is NixOS', not this repo's. Your own
+`nix flake update` moves all of them. Nixarchy is not in that path, so there
+is nobody to wait for.
 
 **Omarchy itself is checked daily.** `omarchy.yml` asks GitHub for the newest
 release, and if it differs from the pin it bumps the input and re-runs every
@@ -279,9 +282,10 @@ Most of it is not our job, and should not be:
 
 | where the app comes from | who updates it |
 |---|---|
-| nixpkgs (30 of 37 apps) | **nobody** — your own `nix flake update` |
+| nixpkgs (32 of 38 apps) | **nobody** — your own `nix flake update` |
 | pinned in this repo (2) | a weekly bot, opening a PR |
 | `zen` | upstream's own flake |
+| `retroarch` | nixpkgs, via this flake's own pin — it is a rebuild with cores |
 
 For the handful pinned here by version and hash, `.github/workflows/update.yml`
 runs `nix run .#update` weekly, builds everything it changed, and opens a
