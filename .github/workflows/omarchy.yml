@@ -1,0 +1,117 @@
+name: omarchy
+
+on:
+  schedule:
+    # Omarchy releases often. Daily, so a broken upstream is found while the
+    # change is still small enough to read.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Find the newest Omarchy release
+        id: rel
+        run: |
+          latest=$(curl -fsSL https://api.github.com/repos/basecamp/omarchy/releases/latest |
+            jq -r .tag_name)
+          current=$(grep -oE 'github:basecamp/omarchy/[^"]+' flake.nix | cut -d/ -f3)
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "$current -> $latest"
+          [ "$current" = "$latest" ] && echo "changed=false" >> "$GITHUB_OUTPUT" ||
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Bump the input
+        if: steps.rel.outputs.changed == 'true'
+        run: |
+          sed -i "s|github:basecamp/omarchy/[^\"]*|github:basecamp/omarchy/${{ steps.rel.outputs.latest }}|" flake.nix
+          nix flake update omarchy
+
+      # Everything below is the same set of assertions build.yml makes, run
+      # against the new Omarchy rather than the pinned one. Each answers a
+      # different way upstream can break this port, and each has caught a real
+      # break at least once:
+      #
+      #   - a bin we replace disappearing or being renamed
+      #   - a substituteInPlace anchor changing under us (--replace-fail)
+      #   - a menu row id we override no longer existing
+      #   - a NEW app in the Install menu that data/apps.nix does not map,
+      #     which would otherwise reach users as a row still calling pacman
+      - name: Build against the new Omarchy
+        if: steps.rel.outputs.changed == 'true'
+        run: nix build .#omarchy --print-build-logs
+
+      - name: Check nothing became unmapped or unwired
+        if: steps.rel.outputs.changed == 'true'
+        run: |
+          python3 - result/share/omarchy/default/omarchy/omarchy-menu.jsonc data/apps.nix <<'PY'
+          import re, sys
+          raw = open(sys.argv[1]).read()
+          rows = re.sub(r'^\s*//[^\n]*(\n|$)', '', raw, flags=re.M)
+          known = set(re.findall(r'arch = "([^"]+)"', open(sys.argv[2]).read()))
+          wanted = {}
+          for rid, body in re.findall(r'"(install\.[a-z0-9.\-]+)":\s*(\{[^}]*\})', rows):
+              m = re.search(r'omarchy-pkg-present\s+([a-z0-9._@+\-]+)', body)
+              if m:
+                  wanted[rid] = m.group(1)
+          missing = {r: a for r, a in wanted.items() if a not in known}
+          for r, a in missing.items():
+              print(f"::error::new Install row {r} wants '{a}', unmapped in data/apps.nix")
+          if missing:
+              sys.exit(f"{len(missing)} new apps need mapping")
+          print(f"all {len(wanted)} Install rows still mapped")
+          PY
+
+      - name: Build the system closure
+        if: steps.rel.outputs.changed == 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc "$AGENT_TOOLSDIRECTORY"
+          sudo tee -a /etc/nix/nix.conf >/dev/null <<'EOF'
+          extra-substituters = https://hyprland.cachix.org
+          extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE=
+          EOF
+          sudo systemctl restart nix-daemon || true
+          nix build .#checks.x86_64-linux.vm-toplevel --print-build-logs
+
+      - name: Open a pull request
+        if: steps.rel.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: update/omarchy
+          title: "Omarchy ${{ steps.rel.outputs.latest }}"
+          commit-message: "Omarchy ${{ steps.rel.outputs.latest }}"
+          body: |
+            Bumps the vendored Omarchy to `${{ steps.rel.outputs.latest }}`.
+
+            The tree builds, every bin this port replaces is still present,
+            every `substituteInPlace` anchor still matches, every menu row it
+            overrides still exists, and every app in the Install menu is still
+            mapped in `data/apps.nix`.
+
+            **None of that means the desktop still works.** Boot the VM before
+            merging:
+
+            ```sh
+            QEMU_OPTS="-device virtio-vga-gl -display gtk,gl=on" nix run .#vm
+            ```
+          labels: dependencies
+          delete-branch: true
+
+      - name: Report what needs a human
+        if: failure() && steps.rel.outputs.changed == 'true'
+        run: |
+          echo "Omarchy ${{ steps.rel.outputs.latest }} needs manual work." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Most likely one of:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- a new app in the Install menu -> add it to data/apps.nix" >> "$GITHUB_STEP_SUMMARY"
+          echo "- a renamed bin -> pkgs/omarchy/nix-bin/" >> "$GITHUB_STEP_SUMMARY"
+          echo "- a changed substituteInPlace anchor -> pkgs/omarchy/default.nix" >> "$GITHUB_STEP_SUMMARY"
+          echo "- a menu row id that no longer exists -> modules/apps.nix" >> "$GITHUB_STEP_SUMMARY"

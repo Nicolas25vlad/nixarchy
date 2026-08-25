@@ -3,8 +3,8 @@
 # The ids and labels come from upstream's own
 # default/omarchy/omarchy-menu.jsonc; the right-hand side is the curated part
 # and is the only place in this repo that needs a human when upstream adds an
-# app. CI compares this file against that menu and fails on anything unmapped,
-# so the list cannot rot silently.
+# app. build.yml and omarchy.yml both compare this file against that menu and
+# fail on anything unmapped, so the list cannot rot silently.
 #
 # Per-app fields:
 #   label      Shown in the generated template and the menu.
@@ -112,7 +112,16 @@
   };
 
   # ── Terminals ───────────────────────────────────────────────────────────
-  # foot ships in the base session already; the rest are opt-in.
+  # foot already ships in the base session, but its Install row still exists
+  # upstream and has to be mapped or it stays wired to pacman. Enabling it is
+  # harmless: systemPackages is a set.
+  foot = {
+    menuId = "install.terminal.foot";
+    label = "Foot";
+    category = "Terminal";
+    attr = "foot";
+    arch = "foot";
+  };
   alacritty = {
     menuId = "install.terminal.alacritty";
     label = "Alacritty";

@@ -168,6 +168,35 @@ ssh -p 2222 omarchy@localhost 'bash -s' < docs/capture-screenshots.sh
 scp -P 2222 'omarchy@localhost:~/nixarchy-screenshots/*.png' docs/screenshots/
 ```
 
+## Keeping up with Omarchy
+
+Three schedules, each answering a different question:
+
+| workflow | asks | when |
+|---|---|---|
+| `omarchy.yml` | has Omarchy released? does this port still build against it? | daily |
+| `update.yml` | has `once` released? | weekly |
+| `build.yml` | does everything still hold? | every push |
+
+When Omarchy releases, `omarchy.yml` bumps the input and re-runs every
+assertion against the new tree. Each one catches a different way upstream can
+break the port:
+
+- a bin this port replaces disappearing or being renamed
+- a `substituteInPlace` anchor changing under us (`--replace-fail`)
+- a menu row id it overrides no longer existing
+- **a new app in the Install menu that `data/apps.nix` does not map** — which
+  would otherwise reach users as a row still calling pacman
+
+If they all pass, it opens a PR. If one fails, the run summary names which of
+the four it was and which file to edit. **Neither is auto-merged**: a build
+proves the tree assembles, not that the desktop still comes up, so the PR asks
+you to boot the VM first.
+
+Adding a new Omarchy app is then usually one entry in `data/apps.nix` —
+`attr` for a plain nixpkgs package, `option` for something that needs a NixOS
+module. The menu rewiring and the Remove row are generated from it.
+
 ## Keeping applications updated
 
 Most of it is not our job, and should not be:
