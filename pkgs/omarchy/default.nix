@@ -304,6 +304,21 @@ stdenvNoCC.mkDerivation {
         sourceSize.width: 4096"
     done
 
+    # omarchy-launch-webapp and omarchy-launch-browser find the browser by
+    # reading its .desktop out of {~/.local,~/.nix-profile,/usr}/share/
+    # applications. On NixOS a system package's desktop file is under
+    # /run/current-system/sw and a per-user one under /etc/profiles/per-user,
+    # so that search finds nothing, the command substitution collapses to
+    # empty, and the launcher runs `uwsm-app -- --app=<url>`:
+    #
+    #   Error: Path "--app=https://search.nixos.org/options" does not exist!
+    for f in omarchy-launch-webapp omarchy-launch-browser; do
+      substituteInPlace $out/share/omarchy/bin/$f \
+        --replace-fail \
+          '{~/.local,~/.nix-profile,/usr}/share/applications' \
+          '{~/.local,~/.nix-profile,/etc/profiles/per-user/$USER,/run/current-system/sw,/usr}/share/applications'
+    done
+
     # Replace the bins that drive pacman. These are not reachable through the
     # menu extension: the shell's bar widget and its "Update System"
     # notification call omarchy-update directly from QML, so overriding a menu
