@@ -165,3 +165,10 @@ jobs:
 
       - name: Build the VM system closure
         run: nix build .#checks.x86_64-linux.vm-toplevel --print-build-logs
+
+      - name: Drive a session and the app-selection loop
+        # Boots a machine, picks two apps through nixarchy-app-enable, checks
+        # the file still parses, and checks nixarchy-apply copies the
+        # selection into the flake. Nothing else here proves that the Install
+        # menu actually installs anything.
+        run: nix build .#checks.x86_64-linux.session --print-build-logs

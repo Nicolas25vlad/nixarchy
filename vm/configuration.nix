@@ -81,6 +81,58 @@
     #   with GL:   QEMU_OPTS="-device virtio-vga-gl -display gtk,gl=on" nix run .#vm
   };
 
+  # A real flake on disk, so the whole pick -> Apply changes -> switch loop can
+  # actually be exercised here rather than only on a physical host.
+  #
+  # nixarchy-apply copies the app selection into this directory and runs
+  # `nixos-rebuild switch --flake` against it. Without somewhere real to copy
+  # to, Apply changes can only ever print an error.
+  #
+  # The inputs are pinned by the same flake.lock this VM was built from, and
+  # the nixarchy input is the store path that built it, so a rebuild resolves
+  # everything already present and needs no network.
+  programs.nixarchy.flake = "/etc/nixos";
+
+  # Written by an activation script rather than environment.etc, because
+  # environment.etc produces read-only symlinks into the store and
+  # nixarchy-apply has to copy the app selection into this directory.
+  system.activationScripts.nixarchyVmFlake = ''
+    mkdir -p /etc/nixos
+
+    # Regenerated every activation: it is scaffolding, not user content.
+    cat > /etc/nixos/flake.nix <<'FLAKE'
+    {
+      inputs.nixarchy.url = "path:${inputs.self}";
+
+      outputs =
+        { self, nixarchy, ... }:
+        {
+          nixosConfigurations.nixarchy-vm = nixarchy.inputs.nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            specialArgs = { inputs = nixarchy.inputs // { self = nixarchy; }; };
+            modules = [
+              nixarchy.nixosModules.nixarchy
+              nixarchy.inputs.home-manager.nixosModules.home-manager
+              "''${nixarchy}/vm/configuration.nix"
+              ./nixarchy-apps.nix
+            ];
+          };
+        };
+    }
+    FLAKE
+
+    # nixarchy-apply overwrites this with the user's selection. It exists from
+    # the start because an `imports` entry pointing at a missing file fails
+    # evaluation -- the rebuild would break before the selection ever arrived.
+    if [ ! -e /etc/nixos/nixarchy-apps.nix ]; then
+      printf '{ ... }:\n{ }\n' > /etc/nixos/nixarchy-apps.nix
+    fi
+  '';
+
+  # Unfree is on because most of what the Install menu offers is unfree, and
+  # discovering that through a licence error mid-rebuild helps nobody.
+  nixpkgs.config.allowUnfree = true;
+
   # Serial console keeps the journal readable from the host when the
   # graphical session is the thing that is broken.
   boot.kernelParams = [ "console=ttyS0" ];

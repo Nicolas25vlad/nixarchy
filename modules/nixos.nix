@@ -57,9 +57,16 @@ in
       }
     ];
 
-    nix.settings = lib.mkIf cfg.useHyprlandCache {
-      substituters = [ "https://hyprland.cachix.org" ];
-      trusted-public-keys = [
+    nix.settings = {
+      # nixarchy-apply runs `nixos-rebuild switch --flake`, so flakes are not
+      # optional here. mkDefault leaves a user free to manage this themselves.
+      experimental-features = lib.mkDefault [
+        "nix-command"
+        "flakes"
+      ];
+
+      substituters = lib.mkIf cfg.useHyprlandCache [ "https://hyprland.cachix.org" ];
+      trusted-public-keys = lib.mkIf cfg.useHyprlandCache [
         "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE="
       ];
     };

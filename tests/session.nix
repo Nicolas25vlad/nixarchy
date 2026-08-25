@@ -20,7 +20,13 @@ pkgs.testers.runNixOSTest {
       inputs.home-manager.nixosModules.home-manager
     ];
 
-    programs.nixarchy.enable = true;
+    programs.nixarchy = {
+      enable = true;
+      # Somewhere real for nixarchy-apply to copy the selection into. The VM
+      # in vm/configuration.nix builds a full flake there; this test only
+      # needs the copy to have a destination.
+      flake = "/etc/nixos";
+    };
 
     # Start the session the way a real login does. An earlier version ran
     # Hyprland under `su`, which has no logind session and therefore no seat,
@@ -70,10 +76,42 @@ pkgs.testers.runNixOSTest {
       memorySize = 6144;
       cores = 4;
     };
+
+    system.activationScripts.testFlakeDir = ''
+      mkdir -p /etc/nixos
+      chmod 0777 /etc/nixos
+    '';
   };
 
   testScript = ''
     machine.wait_for_unit("multi-user.target")
+
+    # ---- app selection -------------------------------------------------
+    # Deliberately before anything graphical: Home Manager seeds apps.nix at
+    # system activation, so none of this needs a session, and a slow login
+    # must not be able to mask a broken selection loop.
+    machine.wait_for_file("/home/omarchy/.config/nixarchy/apps.nix")
+    machine.succeed("su omarchy -c 'nixarchy-app-enable brave'")
+    machine.succeed("su omarchy -c 'nixarchy-app-enable helix'")
+    enabled = machine.succeed(
+        "grep -E '^[[:space:]]*[a-z0-9_-]+\\.enable' /home/omarchy/.config/nixarchy/apps.nix"
+    )
+    print(enabled)
+    assert "brave.enable" in enabled, "brave was not enabled"
+    assert "helix.enable" in enabled, "helix was not enabled"
+    # A pick that leaves the file unparseable would break the next rebuild.
+    machine.succeed("nix-instantiate --parse /home/omarchy/.config/nixarchy/apps.nix >/dev/null")
+
+    # Picking the same app twice must be a no-op, not a second uncomment.
+    machine.succeed("su omarchy -c 'nixarchy-app-enable brave'")
+    machine.succeed("nix-instantiate --parse /home/omarchy/.config/nixarchy/apps.nix >/dev/null")
+
+    # Answering "no" to the prompt asserts the copy, not a full rebuild.
+    print(machine.succeed("su omarchy -c 'echo n | nixarchy-apply' 2>&1"))
+    machine.succeed("grep -q 'brave.enable' /etc/nixos/nixarchy-apps.nix")
+    print("selection reached /etc/nixos/nixarchy-apps.nix")
+
+    # ---- session -------------------------------------------------------
     # Autologin on tty1 starts Hyprland from a real seat.
     machine.wait_for_unit("user@1000.service")
 
@@ -92,5 +130,6 @@ pkgs.testers.runNixOSTest {
 
     print("=========== is the shell alive? ===========")
     print(machine.succeed("pgrep -a quickshell || echo 'NO QUICKSHELL PROCESS'"))
+
   '';
 }

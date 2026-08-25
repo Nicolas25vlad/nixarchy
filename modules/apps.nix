@@ -335,6 +335,7 @@ in
               pkgs.gnused
               pkgs.gnugrep
               pkgs.coreutils
+              cfg.package # omarchy-notification-send
             ];
             text = ''
               file="''${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy/apps.nix"
