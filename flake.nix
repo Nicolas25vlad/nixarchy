@@ -110,7 +110,8 @@
             # snes9x and genesis-plus-gx are unfree, hence bsnes and blastem
             # for those systems.
             retroarch = final.retroarch.withCores (
-              cores: map (n: cores.${n}) [
+              cores:
+              map (n: cores.${n}) [
                 "bsnes" # SNES
                 "mesen" # NES
                 "gambatte" # Game Boy / Color
