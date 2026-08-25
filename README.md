@@ -10,13 +10,17 @@ the parts that assume Arch, rather than reimplementing it in Nix.
 
 Tracking an upstream release is a source bump, not a re-port.
 
-![The Omarchy desktop on NixOS](docs/screenshots/00-desktop.png)
+![The Omarchy desktop on NixOS](docs/screenshots/00-desktop.jpg)
 
-| | |
+| the menu | Install |
 |---|---|
 | ![menu](docs/screenshots/01-menu-root.png) | ![install](docs/screenshots/02-install.png) |
-| ![service](docs/screenshots/03-install-service.png) | ![editor](docs/screenshots/04-install-editor.png) |
+| **Remove** | **Update** |
 | ![remove](docs/screenshots/09-remove.png) | ![update](docs/screenshots/10-update.png) |
+
+> The menu sits on black rather than on a dimmed desktop. That is a known bug,
+> not the design — see [Known gaps](#status). The desktop above is what is
+> actually behind it.
 
 More in [`docs/screenshots/`](docs/screenshots).
 

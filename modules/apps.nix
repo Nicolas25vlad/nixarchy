@@ -161,6 +161,9 @@ let
     builtins.toJSON (
       {
         "install.package" = {
+          # Upstream wears the Arch logo here; the generator would carry it
+          # across untouched, since it only fills in what an override omits.
+          icon = "󰉉";
           label = "Edit app selection";
           action = "omarchy-launch-editor $HOME/.config/nixarchy/apps.nix";
           description = "Every Omarchy app, as NixOS options";
@@ -174,7 +177,7 @@ let
         # edits ~/.config/nixarchy/apps.nix -- never the user's own NixOS
         # configuration, which nixarchy does not own.
         "remove.package" = {
-          icon = "";
+          icon = "󰭌";
           label = "App";
           action = "omarchy-launch-floating-terminal-with-presentation nixarchy-app-remove";
           description = "Deselect apps, then Apply changes to rebuild without them";
@@ -184,7 +187,7 @@ let
         # runs pacman. The action is already replaced (see pkgs/omarchy/nix-bin);
         # this is the label catching up with what it now does.
         "update.omarchy" = {
-          icon = "";
+          icon = "󰭌";
           label = "Nixarchy";
           description = "nix flake update, then nixos-rebuild switch --flake";
         };
@@ -218,25 +221,25 @@ let
         # set explicitly here because the generator only carries upstream's
         # across when an override does not state its own.
         "learn.arch" = {
-          icon = "";
+          icon = "󰧑";
           label = "NixOS";
           action = "omarchy-launch-webapp 'https://wiki.nixos.org/'";
           description = "NixOS Wiki";
         };
         "learn.nixpkgs" = {
-          icon = "";
+          icon = "󰉉";
           label = "Nixpkgs";
           action = "omarchy-launch-webapp 'https://search.nixos.org/packages'";
           description = "Search for a package";
         };
         "learn.nix-options" = {
-          icon = "";
+          icon = "󰧑";
           label = "NixOS Options";
           action = "omarchy-launch-webapp 'https://search.nixos.org/options'";
           description = "Search NixOS configuration options";
         };
         "install.apply" = {
-          icon = "";
+          icon = "";
           label = "Apply changes";
           action = "omarchy-launch-floating-terminal-with-presentation nixarchy-apply";
           description = "Copy the selection into your flake and nixos-rebuild switch";

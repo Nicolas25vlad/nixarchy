@@ -27,27 +27,42 @@ eval "$(tr '\0' '\n' <"/proc/$pid/environ" |
   grep -E '^(WAYLAND_DISPLAY|XDG_RUNTIME_DIR|HYPRLAND_INSTANCE_SIGNATURE)=' |
   sed 's/^/export /')"
 
-close_menu() { omarchy-shell shell close omarchy.menu >/dev/null 2>&1 || true; }
+# The only menu IPC is `toggle`, so state has to be observed rather than
+# assumed: an earlier version of this script called a `close` method that does
+# not exist, and every second capture came out with the menu shut.
+menu_open() { hyprctl layers 2>/dev/null | grep -q 'namespace: omarchy-menu'; }
+
+close_menu() {
+  menu_open || return 0
+  omarchy-shell shell toggle omarchy.menu >/dev/null 2>&1 || true
+  sleep 0.8
+}
+
+open_menu() { # open_menu <menu-id>
+  omarchy-shell shell toggle omarchy.menu "{\"menu\":\"$1\"}" >/dev/null 2>&1 || true
+  sleep 1.2
+  menu_open && return 0
+  # A toggle landed on the wrong phase; try once more.
+  omarchy-shell shell toggle omarchy.menu "{\"menu\":\"$1\"}" >/dev/null 2>&1 || true
+  sleep 1.2
+}
 
 shot() { # shot <file-name> <menu-id>
   local name=$1 menu=$2
   close_menu
-  sleep 0.6
-  omarchy-shell shell toggle omarchy.menu "{\"menu\":\"$menu\"}" >/dev/null 2>&1
-  sleep 1.4 # let the panel finish animating in
-  grim "$out/$name.png"
-  echo "  $name.png"
+  open_menu "$menu"
+  if menu_open; then
+    grim "$out/$name.png"
+    echo "  $name.png"
+  else
+    echo "  $name.png  SKIPPED (menu would not open)" >&2
+  fi
 }
 
 echo "capturing to $out"
 
-# Clear any notification toasts first: they sit in the overlay layer and would
-# appear in every shot.
-omarchy-shell notifications dismissAll >/dev/null 2>&1 ||
-  omarchy-shell shell close omarchy.notifications >/dev/null 2>&1 || true
-
 close_menu
-sleep 2
+sleep 1.5
 grim "$out/00-desktop.png"
 echo "  00-desktop.png"
 
