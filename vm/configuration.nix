@@ -1,8 +1,9 @@
-{ inputs
-, lib
-, pkgs
-, modulesPath
-, ...
+{
+  inputs,
+  lib,
+  pkgs,
+  modulesPath,
+  ...
 }:
 {
   # Smoke-test VM. The point is to answer one question cheaply: does the

@@ -18,9 +18,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Check formatting
         run: nix fmt -- --ci
@@ -34,9 +33,8 @@ jobs:
   omarchy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       # Cheap and the most informative single check: proves the vendored tree
       # assembles, shebangs patch, and the bin/ symlink farm is intact.
@@ -52,14 +50,17 @@ jobs:
           echo "commands with metadata: $count"
           test "$count" -gt 300
 
-      - name: Verify no /bin/bash shebangs survived
+      - name: Verify shebangs were patched
         run: |
-          # Executables only. Upstream ships two non-executable scripts
-          # (omarchy-remove-service-{dropbox,tailscale}, mode 644), which
+          # Line 1 only. Several scripts legitimately contain `#!/bin/bash`
+          # further down inside heredocs because they generate scripts, so
+          # grepping whole files reports those as failures.
+          #
+          # Executables only: upstream ships two non-executable scripts
+          # (omarchy-remove-service-{dropbox,tailscale}, mode 644) which
           # patchShebangs correctly skips and which cannot run on Arch either.
-          # Matching upstream beats chmod-ing them to make a check pass.
           unpatched=$(find result/share/omarchy/bin/ -type f -perm -u+x \
-            -exec grep -l '^#!/bin/bash' {} + || true)
+            -exec awk 'FNR==1 && /^#!\/bin\/(ba)?sh/ { print FILENAME }' {} +)
           if [ -n "$unpatched" ]; then
             echo "::error::unpatched shebangs: $unpatched"
             exit 1
@@ -69,20 +70,25 @@ jobs:
   system:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Free disk space
-        # Hyprland + a full desktop closure does not fit in the default runner.
+        # Hyprland plus a full desktop closure does not fit in the default
+        # runner alongside the preinstalled toolchains.
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
 
-      - name: Add hyprland cache
+      - name: Add hyprland binary cache
+        # Nixarchy pins Hyprland ahead of nixpkgs, so without this the runner
+        # compiles a compositor from source and times out.
         run: |
-          echo "extra-substituters = https://hyprland.cachix.org" | sudo tee -a /etc/nix/nix.conf
-          echo "extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE=" | sudo tee -a /etc/nix/nix.conf
+          sudo tee -a /etc/nix/nix.conf >/dev/null <<'EOF'
+          extra-substituters = https://hyprland.cachix.org
+          extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE=
+          EOF
           sudo systemctl restart nix-daemon || true
 
       - name: Build the VM system closure

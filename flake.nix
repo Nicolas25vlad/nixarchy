@@ -12,15 +12,25 @@
     };
 
     # Omarchy 4.x configures Hyprland through the Lua API that landed in
-    # 0.55; nixpkgs is still on 0.54.3. Pinned to a tag rather than tracking
-    # master because the Lua bindings are days old and still moving -- a
-    # `nix flake update` should never be able to break the bar on its own.
+    # 0.55; nixpkgs is still on 0.54.3.
+    #
+    # Pinned to a COMMIT, not the v0.56.2 tag, because that tag does not build
+    # against its own flake.lock: its CMakeLists asks for
+    # `find_package(glaze 7...<8)` while nix/overlays.nix feeds it the
+    # glaze 8.0.0 from its locked nixpkgs. find_package fails, CMake falls
+    # back to cloning glaze over the network, and the sandbox has none.
+    # Upstream dropped the version bound after tagging, and v0.56.2 is the
+    # newest tag, so there is no fixed tag to move to.
+    #
+    # A commit is just as reproducible as a tag. Bump it deliberately; never
+    # track a branch here, or `nix flake update` could break the bar on its
+    # own while the Lua bindings are still moving.
     #
     # Deliberately NOT `inputs.nixpkgs.follows = "nixpkgs"`: hyprwm asks
     # consumers not to override it, and doing so forfeits their binary cache
     # and rebuilds the compositor from source. See nix.settings in
     # modules/nixos.nix for the matching substituter.
-    hyprland.url = "github:hyprwm/Hyprland/v0.56.2";
+    hyprland.url = "github:hyprwm/Hyprland/0bd11c7a04a63d2785abd53363f09d552175d67d";
 
     omarchy = {
       url = "github:basecamp/omarchy/v4.0.1";
