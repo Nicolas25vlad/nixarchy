@@ -145,7 +145,15 @@ jobs:
           idlike = [k for k, v in rows.items() if v.get("label") == k]
           if idlike:
               sys.exit(f"::error::menu rows whose label is their id: {idlike}")
-          print(f"menu extension OK: {len(rows)} rows, {len(wired)} wired, all labelled")
+          # Same trap as the label: an override that omits `action` does not
+          # inherit upstream's, it blanks it, and the row silently does
+          # nothing when clicked.
+          dead = [k for k, v in rows.items()
+                  if not v.get("action") and not v.get("when")
+                  and not v.get("target") and not v.get("provider")]
+          if dead:
+              sys.exit(f"::error::menu rows with no action and no submenu: {dead}")
+          print(f"menu extension OK: {len(rows)} rows, {len(wired)} wired, all labelled and actionable")
           PY
 
           # The template is Nix that gets imported into the user's flake; if it

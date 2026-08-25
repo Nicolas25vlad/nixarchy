@@ -94,6 +94,11 @@
   inxi,
   ffmpegthumbnailer,
   vips,
+  file,
+  libxkbcommon,
+  xdg-user-dirs,
+  satty,
+  wl-screenrec,
 
   # Branding: this is a NixOS port, so the menu button wears the snowflake.
   nixos-icons,
@@ -194,6 +199,14 @@ let
     inxi # omarchy-debug
     ffmpegthumbnailer # nautilus thumbnails
     vips # omarchy-menu-images, the wallpaper picker, shells out to `vips`
+
+    # Found by auditing the running VM's PATH against what the scripts call,
+    # rather than by reading base.packages again.
+    file # omarchy-webapp-install: "file: command not found"
+    libxkbcommon # xkbcli, for the keyboard-layout widget
+    xdg-user-dirs # xdg-user-dirs-update
+    satty # screenshot annotation
+    wl-screenrec # screen recording
   ];
 in
 stdenvNoCC.mkDerivation {

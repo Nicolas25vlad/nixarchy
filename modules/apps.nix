@@ -169,6 +169,22 @@ let
           when = "false";
         };
 
+        # Upstream's label is "Omarchy" and its action pulls a git checkout and
+        # runs pacman. The action is already replaced (see pkgs/omarchy/nix-bin);
+        # this is the label catching up with what it now does.
+        "update.omarchy" = {
+          icon = "";
+          label = "Nixarchy";
+          description = "nix flake update, then nixos-rebuild switch --flake";
+        };
+
+        # Omarchy release channels (stable/edge) are a pacman repository
+        # choice. Here the version is whatever the flake's omarchy input is
+        # pinned to, so there is no channel to switch.
+        "update.channel" = {
+          when = "false";
+        };
+
         # The Arch wiki is the wrong manual on a NixOS host. Icon and label are
         # set explicitly here because the generator only carries upstream's
         # across when an override does not state its own.
@@ -259,11 +275,17 @@ let
                 missing.append(row_id)
                 continue
             merged = dict(override)
-            # Carry upstream's presentation across untouched. Anything the
-            # override states explicitly still wins.
-            for key in ("icon", "iconFont", "label"):
-                if key not in merged and base and base.get(key):
-                    merged[key] = base[key]
+            # Carry across EVERY key the override does not state. MenuModel.js
+            # normalizes an entry before merging -- label falls back to the id,
+            # and every other field to "" -- and then copies all of the
+            # override's keys over the default. So an override that omits a
+            # key does not inherit upstream's, it blanks it: omitting `label`
+            # renders the raw id, and omitting `action` makes the row do
+            # nothing at all. Only a full row is safe to hand back.
+            if base:
+                for key, value in base.items():
+                    if key not in merged and value not in ("", [], None):
+                        merged[key] = value
             out[row_id] = merged
 
         if missing:
@@ -377,7 +399,22 @@ in
 
               # Strip one leading '# ' from the marked line, nothing else.
               sed -i -E "/#@ $id([[:space:]]|\$)/ s/^([[:space:]]*)# ?/\1/" "$file"
-              echo "enabled $id in $file"
+
+              # A menu pick runs with no terminal attached, so stdout goes
+              # nowhere and the pick looks like it did nothing at all. Say so
+              # on the desktop instead. -r keeps repeated picks replacing one
+              # notification rather than stacking a wall of them.
+              queued=$(grep -cE "^[[:space:]]*[a-z0-9_-]+\.enable" "$file" || true)
+              if command -v omarchy-notification-send >/dev/null 2>&1; then
+                # --exec makes the notification clickable: nothing is built
+                # until a rebuild runs, so the notification that says so is
+                # also the way to start it.
+                omarchy-notification-send -r 8471 -t 8000 -u normal \
+                  "$id queued -- not installed yet" \
+                  "$queued app(s) selected. Click here, or Install > Apply changes, to run nixos-rebuild." \
+                  --exec omarchy-launch-floating-terminal-with-presentation nixarchy-apply || true
+              fi
+              echo "enabled $id in $file ($queued queued)"
               echo "run 'nixarchy-apply' when you have picked everything you want"
             '';
           })
