@@ -18,10 +18,6 @@ Tracking an upstream release is a source bump, not a re-port.
 | **Remove** | **Update** |
 | ![remove](docs/screenshots/09-remove.png) | ![update](docs/screenshots/10-update.png) |
 
-> The menu sits on black rather than on a dimmed desktop. That is a known bug,
-> not the design — see [Known gaps](#status). The desktop above is what is
-> actually behind it.
-
 More in [`docs/screenshots/`](docs/screenshots).
 
 ## What works
@@ -292,6 +288,22 @@ with no error anywhere**: Qt reports the image `Ready` at its full size, the
 layer surface exists at alpha 1, and the log is clean. `sourceSize` caps what
 Qt decodes, which fixes it on every machine with that limit.
 
+### GL apps need a software fallback in a VM
+
+Three separate symptoms turned out to be one cause: kitty and LocalSend died
+on startup with `EGL: No EGLConfigs returned`, and opening the menu blanked
+the whole desktop, bar included. The scrim was not at fault — dropping its
+alpha from 0.5 to 0.12 changed the rendered pixel not at all.
+
+qemu's virgl path hands out no usable EGL config, so every GL consumer fails:
+the apps refuse to start, and Hyprland composites nothing beneath its overlay
+layer. The guest has `swrast`, `virtio_gpu` and a render node all the same, so
+nothing looks wrong until something asks for a config.
+
+`LIBGL_ALWAYS_SOFTWARE=1` in the VM fixes all three. With it, the menu dims
+the wallpaper (`#281640` over `#36115A`) instead of erasing it. It is set for
+the VM only: on a real GPU it would push every GL app onto the CPU.
+
 ### User state stays mutable
 
 `omarchy-theme-set` applies themes at runtime by copying files into
@@ -344,12 +356,6 @@ Known gaps:
   `/etc/brave/policies/managed`
 - UPower is not enabled, so the battery widget is inert
 - Bluetooth's DBus object manager fails in the VM
-- Opening the menu blanks everything beneath it -- wallpaper *and* bar. The
-  menu's own surface is `color: "transparent"` and its scrim is the background
-  at alpha 0.5, but changing that alpha to 0.12 makes no difference to the
-  rendered pixel, so the compositor is not blending under the fullscreen
-  overlay layer at all. Not yet traced; it may be specific to software
-  rendering.
 
 ## License
 
