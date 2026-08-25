@@ -277,6 +277,33 @@ stdenvNoCC.mkDerivation {
         'cp -r "$OMARCHY_THEMES_PATH/$THEME_NAME/"* "$NEXT_THEME_PATH/"' \
         'cp -r --no-preserve=mode "$OMARCHY_THEMES_PATH/$THEME_NAME/"* "$NEXT_THEME_PATH/"'
 
+    # The banner every omarchy-launch-floating-terminal-with-presentation
+    # prints. It says NIXARCHY so it is obvious which of the two is running --
+    # the letters ARCHY are sliced from upstream's own logo.txt rather than
+    # redrawn, so only NIX is new.
+    install -Dm444 ${./branding/logo.txt} $out/share/omarchy/logo.txt
+
+    # Omarchy ships wallpapers up to 7680px wide. Anything wider than
+    # GL_MAX_TEXTURE_SIZE cannot become a texture, and the background renders
+    # black with no error anywhere -- Qt reports the image Ready, the layer
+    # surface exists at full size, and nothing is drawn. 4096 is the limit on
+    # llvmpipe and on plenty of integrated GPUs, and 5 of the 8 backgrounds in
+    # the default theme are over it.
+    #
+    # sourceSize caps what Qt decodes to. Setting only the width keeps the
+    # aspect ratio, and 4096 is wider than any display this would be shown on,
+    # so there is no visible loss -- and every machine decodes less. A plain
+    # constant rather than anything derived from Screen: Screen is an attached
+    # property that does not resolve inside an Image, and a QML error here
+    # would take out the whole background rather than just the size hint.
+    for prop in displayedBackground oldBackground incomingBackground; do
+      substituteInPlace $out/share/omarchy/shell/plugins/background/Background.qml \
+        --replace-fail \
+          "source: root.imageUrl(root.$prop)" \
+          "source: root.imageUrl(root.$prop)
+        sourceSize.width: 4096"
+    done
+
     # Replace the bins that drive pacman. These are not reachable through the
     # menu extension: the shell's bar widget and its "Update System"
     # notification call omarchy-update directly from QML, so overriding a menu

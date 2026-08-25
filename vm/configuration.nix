@@ -174,7 +174,30 @@
 
   # Serial console keeps the journal readable from the host when the
   # graphical session is the thing that is broken.
-  boot.kernelParams = [ "console=ttyS0" ];
+  boot = {
+    kernelParams = [ "console=ttyS0" ];
+
+    # This VM boots through qemu's -kernel (virtualisation.useBootLoader is
+    # false) onto a tmpfs root, so there is no disk for a bootloader to live on.
+    # NixOS still enables GRUB by default, so `nixos-rebuild switch` inside the
+    # VM built the whole system and then died on the very last step:
+    #
+    #   Failed to get blkid info (returned 512) for / on tmpfs
+    #   Failed to install bootloader
+    #
+    # boot.loader.external satisfies the assertion that some bootloader is
+    # configured while installing nothing, which is right here: the next boot
+    # comes from the host's run script, not from this disk.
+    loader.grub.enable = lib.mkForce false;
+    loader.external = {
+      enable = true;
+      installHook = lib.getExe (
+        pkgs.writeShellScriptBin "nixarchy-vm-no-bootloader" ''
+          echo "nixarchy VM: no bootloader to install (tmpfs root, booted via -kernel)"
+        ''
+      );
+    };
+  };
 
   # The whole point of this VM is diagnosing a session that will not come up,
   # and the interesting logs are in a user journal nobody can reach without
