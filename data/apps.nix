@@ -23,12 +23,14 @@
 {
   # ── Browsers ────────────────────────────────────────────────────────────
   brave = {
+    menuId = "install.browser.brave";
     label = "Brave";
     category = "Browser";
     attr = "brave";
     arch = "brave-bin";
   };
   chrome = {
+    menuId = "install.browser.chrome";
     label = "Chrome";
     category = "Browser";
     attr = "google-chrome";
@@ -36,6 +38,7 @@
     arch = "google-chrome";
   };
   edge = {
+    menuId = "install.browser.edge";
     label = "Edge";
     category = "Browser";
     attr = "microsoft-edge";
@@ -43,6 +46,7 @@
     arch = "microsoft-edge-stable-bin";
   };
   firefox = {
+    menuId = "install.browser.firefox";
     label = "Firefox";
     category = "Browser";
     option = [
@@ -55,6 +59,7 @@
 
   # ── Editors ─────────────────────────────────────────────────────────────
   vscode = {
+    menuId = "install.editor.vscode";
     label = "VSCode";
     category = "Editor";
     attr = "vscode";
@@ -62,6 +67,7 @@
     arch = "visual-studio-code-bin";
   };
   cursor = {
+    menuId = "install.editor.cursor";
     label = "Cursor";
     category = "Editor";
     attr = "code-cursor";
@@ -69,30 +75,35 @@
     arch = "cursor-bin";
   };
   zed = {
+    menuId = "install.editor.zed";
     label = "Zed";
     category = "Editor";
     attr = "zed-editor";
     arch = "zed";
   };
   helix = {
+    menuId = "install.editor.helix";
     label = "Helix";
     category = "Editor";
     attr = "helix";
     arch = "helix";
   };
   emacs = {
+    menuId = "install.editor.emacs";
     label = "Emacs";
     category = "Editor";
     attr = "emacs";
     arch = "omarchy-emacs";
   };
   vim = {
+    menuId = "install.editor.vim";
     label = "Vim";
     category = "Editor";
     attr = "vim";
     arch = "vim";
   };
   sublime = {
+    menuId = "install.editor.sublime";
     label = "Sublime Text";
     category = "Editor";
     attr = "sublime4";
@@ -103,18 +114,21 @@
   # ── Terminals ───────────────────────────────────────────────────────────
   # foot ships in the base session already; the rest are opt-in.
   alacritty = {
+    menuId = "install.terminal.alacritty";
     label = "Alacritty";
     category = "Terminal";
     attr = "alacritty";
     arch = "alacritty";
   };
   ghostty = {
+    menuId = "install.terminal.ghostty";
     label = "Ghostty";
     category = "Terminal";
     attr = "ghostty";
     arch = "ghostty";
   };
   kitty = {
+    menuId = "install.terminal.kitty";
     label = "Kitty";
     category = "Terminal";
     attr = "kitty";
@@ -123,6 +137,7 @@
 
   # ── Services ────────────────────────────────────────────────────────────
   tailscale = {
+    menuId = "install.service.tailscale";
     label = "Tailscale";
     category = "Service";
     option = [
@@ -133,6 +148,7 @@
     note = "A daemon. `settings.useRoutingFeatures = \"client\"` for exit nodes.";
   };
   _1password = {
+    menuId = "install.service.1password";
     label = "1Password";
     category = "Service";
     option = [
@@ -148,6 +164,7 @@
     '';
   };
   dropbox = {
+    menuId = "install.service.dropbox";
     label = "Dropbox";
     category = "Service";
     # A package, not a module: nixpkgs has no services.dropbox option, despite
@@ -157,12 +174,14 @@
     arch = "dropbox";
   };
   signal = {
+    menuId = "install.service.signal";
     label = "Signal";
     category = "Service";
     attr = "signal-desktop";
     arch = "signal-desktop";
   };
   spotify = {
+    menuId = "install.service.spotify";
     label = "Spotify";
     category = "Service";
     attr = "spotify";
@@ -170,12 +189,14 @@
     arch = "spotify";
   };
   bitwarden = {
+    menuId = "install.service.bitwarden";
     label = "Bitwarden";
     category = "Service";
     attr = "bitwarden-desktop";
     arch = "bitwarden";
   };
   nordvpn = {
+    menuId = "install.service.nordvpn";
     label = "NordVPN";
     category = "Service";
     attr = "nordvpn";
@@ -185,6 +206,7 @@
 
   # ── Gaming ──────────────────────────────────────────────────────────────
   steam = {
+    menuId = "install.gaming.steam";
     label = "Steam";
     category = "Gaming";
     option = [
@@ -196,24 +218,28 @@
     note = "A module, not a package: Steam needs an FHS wrapper to run at all.";
   };
   lutris = {
+    menuId = "install.gaming.lutris";
     label = "Lutris";
     category = "Gaming";
     attr = "lutris";
     arch = "lutris";
   };
   heroic = {
+    menuId = "install.gaming.heroic";
     label = "Heroic (Epic Games)";
     category = "Gaming";
     attr = "heroic";
     arch = "heroic-games-launcher-bin";
   };
   retroarch = {
+    menuId = "install.gaming.retroarch";
     label = "RetroArch";
     category = "Gaming";
     attr = "retroarch";
     arch = "retroarch";
   };
   xbox-controllers = {
+    menuId = "install.gaming.xbox-controllers";
     label = "Xbox Controllers";
     category = "Gaming";
     option = [
@@ -226,6 +252,7 @@
 
   # ── AI ──────────────────────────────────────────────────────────────────
   lm-studio = {
+    menuId = "install.ai.lm-studio";
     label = "LM Studio";
     category = "AI";
     attr = "lmstudio";
@@ -235,12 +262,14 @@
 
   # ── Development ─────────────────────────────────────────────────────────
   php = {
+    menuId = "install.development.php.php";
     label = "PHP";
     category = "Development";
     attr = "php";
     arch = "php";
   };
   symfony = {
+    menuId = "install.development.php.symfony";
     label = "Symfony";
     category = "Development";
     attr = "symfony-cli";
@@ -253,48 +282,56 @@
   # row is gone rather than silently dropping it. `unavailable` entries
   # generate no option and no template row.
   minecraft = {
+    menuId = "install.gaming.minecraft";
     label = "Minecraft";
     category = "Gaming";
     unavailable = "Use prismlauncher, which nixpkgs packages and maintains.";
     arch = "minecraft-launcher";
   };
   zen = {
+    menuId = "install.browser.zen";
     label = "Zen";
     category = "Browser";
     unavailable = "Not in nixpkgs; upstream ships a flake at github:0xc000022070/zen-browser-flake.";
     arch = "zen-browser-bin";
   };
   brave-origin = {
+    menuId = "install.browser.brave-origin";
     label = "Brave Origin";
     category = "Browser";
     unavailable = "AUR-only build of Brave; use apps.brave.";
     arch = "brave-origin-bin";
   };
   chatgpt = {
+    menuId = "install.ai.chatgpt";
     label = "ChatGPT Desktop";
     category = "AI";
     unavailable = "AUR-only; use the Web App menu entry instead.";
     arch = "openai-codex-desktop";
   };
   dictation = {
+    menuId = "install.ai.dictation";
     label = "Dictation";
     category = "AI";
     unavailable = "voxtype is AUR-only and not yet packaged for nixpkgs.";
     arch = "voxtype-bin";
   };
   grok-bot = {
+    menuId = "install.ai.grok-bot";
     label = "Grok Bot";
     category = "AI";
     unavailable = "AUR-only; use the Web App menu entry instead.";
     arch = "grok-bot";
   };
   t3-code = {
+    menuId = "install.ai.t3-code";
     label = "T3 Code";
     category = "AI";
     unavailable = "AUR-only, no nixpkgs package.";
     arch = "t3code-bin";
   };
   once = {
+    menuId = "install.service.once";
     label = "ONCE";
     category = "Service";
     unavailable = "AUR-only, no nixpkgs package.";

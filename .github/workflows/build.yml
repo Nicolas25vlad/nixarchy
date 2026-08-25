@@ -88,6 +88,38 @@ jobs:
           fi
           echo "all checked runtime commands resolve ($(ls result/bin | wc -l) binaries)"
 
+      - name: Verify the generated menu extension and app template
+        run: |
+          nix build .#nixosConfigurations.vm.config.system.build.toplevel \
+            --print-build-logs -o result-sys
+
+          # Omarchy's menu parser returns [] on a JSON error rather than
+          # complaining, so a malformed extension is silently ignored and every
+          # Install row quietly reverts to running pacman. Parse it here the
+          # same way MenuModel.js does.
+          python3 - <<'PY'
+          import re, json, sys
+          raw = open("result-sys/etc/nixarchy/omarchy-menu.jsonc").read()
+          s = re.sub(r'^\s*//[^\n]*(\n|$)', '', raw, flags=re.M)   # stripJsonc
+          s = re.sub(r',(\s*[}\]])', r'\1', s)
+          try:
+              rows = json.loads(s)
+          except Exception as e:
+              sys.exit(f"::error::menu extension is not valid JSONC: {e}")
+          wired = [k for k, v in rows.items()
+                   if str(v.get("action", "")).startswith("nixarchy-app-enable")]
+          if len(wired) < 20:
+              sys.exit(f"::error::only {len(wired)} install rows wired to nixarchy-app-enable")
+          if rows.get("install.aur", {}).get("when") != "false":
+              sys.exit("::error::install.aur is not hidden; there is no AUR on NixOS")
+          print(f"menu extension OK: {len(rows)} rows, {len(wired)} wired")
+          PY
+
+          # The template is Nix that gets imported into the user's flake; if it
+          # does not parse, first login hands them a broken config.
+          nix-instantiate --parse result-sys/etc/nixarchy/apps-template.nix >/dev/null
+          echo "app template parses"
+
   system:
     runs-on: ubuntu-latest
     # Its own concurrency group, and NOT cancel-in-progress. This job builds
