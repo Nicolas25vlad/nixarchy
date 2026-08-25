@@ -24,6 +24,28 @@ in
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 
+    bashIntegration = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Source Omarchy's bash rc chain -- default/bash/{envs,shell,aliases,
+        functions,init,inputrc} plus every file in default/bash/fns -- into
+        interactive bash. This is what provides the shell functions the manual
+        documents (compress, dip, hdl, tdl, iso2sd, worktree and tmux
+        helpers), and it needs no patching here because every path in that
+        chain resolves through OMARCHY_PATH, which this module already
+        exports.
+
+        Nothing in the desktop depends on it: the menus and bin/ call the
+        omarchy-* executables directly, not these functions. It is on by
+        default because it is a real part of Omarchy, but it is opinionated --
+        it aliases `ls` to eza, `cd` to zoxide, `g` to git, and sets EDITOR
+        and BROWSER -- so it is worth turning off if you bring your own shell
+        config. It loads from /etc/bashrc, i.e. before ~/.bashrc, so anything
+        you define yourself still wins.
+      '';
+    };
+
     defaultTheme = lib.mkOption {
       type = lib.types.str;
       default = "tokyo-night";
@@ -158,6 +180,18 @@ in
     # This is what makes `omarchy install dev-env` work rather than print a
     # wall of build errors.
     programs.nix-ld.enable = lib.mkDefault true;
+
+    # See programs.nixarchy.bashIntegration. This lands in /etc/bashrc, which
+    # bash sources BEFORE ~/.bashrc, so a user's own aliases still win.
+    #
+    # The chain needs no patching: `default/bash/rc` resolves everything
+    # through OMARCHY_PATH, exported above, and the two /usr paths it does
+    # mention -- Arch's env-bootstrap and bash_completion -- are both behind
+    # `[ -r ... ]` guards, and their jobs are already done by this module and
+    # by NixOS respectively.
+    programs.bash.interactiveShellInit = lib.mkIf cfg.bashIntegration ''
+      source ${cfg.package}/share/omarchy/default/bash/rc
+    '';
 
     boot.plymouth.enable = true;
 

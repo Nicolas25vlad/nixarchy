@@ -196,6 +196,14 @@ let
     alsa-utils # amixer/alsamixer
     imv # image viewer the menus open
     evince # PDF viewer
+    # See pkgs/omarchy/pacman-shim.sh: turns `pacman: command not found` into
+    # a pointer at the Nix equivalent, for the ~15 upstream bins that still
+    # call it. nixpkgs does carry a `pacman`, so a user who installs that one
+    # gets a systemPackages collision -- which is the correct loud failure.
+    (runCommand "pacman-shim" { } ''
+      install -Dm755 ${./pacman-shim.sh} $out/bin/pacman
+    '')
+
     # nixpkgs names the binary localsend_app; omarchy-menu-share and the
     # Nautilus extension both look for `localsend`. Without the alias, Share ->
     # Receive reports: Command not found: "localsend"

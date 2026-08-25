@@ -58,6 +58,11 @@ jobs:
           echo "commands with metadata: $count"
           test "$count" -gt 300
 
+          # Upstream's own consistency check on that metadata -- it validates
+          # every summary, arg spec and group, and is the thing that would
+          # catch a bin we replace drifting out of the CLI's index.
+          result/bin/omarchy commands --check
+
       - name: Verify shebangs were patched
         run: |
           # Line 1 only. Several scripts legitimately contain `#!/bin/bash`
