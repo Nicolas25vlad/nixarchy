@@ -337,9 +337,6 @@ stdenvNoCC.mkDerivation {
 
   passthru = {
     inherit runtimeDeps;
-    # Consumers point OMARCHY_PATH here; it is the single indirection point
-    # for bins, the QuickShell tree, themes, and the Hyprland Lua defaults.
-    omarchyPath = "${placeholder "out"}/share/omarchy";
   };
 
   meta = {

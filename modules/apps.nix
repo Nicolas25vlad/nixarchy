@@ -132,7 +132,7 @@ let
     # you like before applying; nothing is built until you do.
     #
     # This file is yours. Nothing regenerates or overwrites it once created;
-    # the current full list always lives next to it in apps.available.nix.
+    # the current full list is always at /etc/nixarchy/apps-template.nix.
     #
     # The `#@ name` markers are how the menu finds a line to uncomment. Keep
     # them and you can reformat, reorder and annotate this file freely.

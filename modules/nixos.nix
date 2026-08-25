@@ -24,15 +24,6 @@ in
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 
-    useHyprlandCache = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = ''
-        Add hyprwm's binary cache. Nixarchy pins Hyprland to a tag newer than
-        nixpkgs, so with this off the compositor is built from source.
-      '';
-    };
-
     defaultTheme = lib.mkOption {
       type = lib.types.str;
       default = "tokyo-night";
@@ -65,8 +56,11 @@ in
         "flakes"
       ];
 
-      substituters = lib.mkIf cfg.useHyprlandCache [ "https://hyprland.cachix.org" ];
-      trusted-public-keys = lib.mkIf cfg.useHyprlandCache [
+      # Nixarchy pins Hyprland ahead of nixpkgs, so without this the
+      # compositor is built from source. mkForce it away if you would rather
+      # not trust the cache.
+      substituters = [ "https://hyprland.cachix.org" ];
+      trusted-public-keys = [
         "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE="
       ];
     };
@@ -89,7 +83,6 @@ in
       # the package with no way to see module options, and it is reached from
       # the shell's bar widget and notifications as well as the menu.
       sessionVariables.NIXARCHY_FLAKE = cfg.flake;
-      variables.OMARCHY_DEFAULT_THEME = cfg.defaultTheme;
 
       # Omarchy's scripts are unwrapped by design (wrapping breaks the CLI's
       # metadata scan), so their dependencies have to be on the session PATH.
