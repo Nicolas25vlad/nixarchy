@@ -41,8 +41,13 @@ shot() { # shot <file-name> <menu-id>
 
 echo "capturing to $out"
 
+# Clear any notification toasts first: they sit in the overlay layer and would
+# appear in every shot.
+omarchy-shell notifications dismissAll >/dev/null 2>&1 ||
+  omarchy-shell shell close omarchy.notifications >/dev/null 2>&1 || true
+
 close_menu
-sleep 1
+sleep 2
 grim "$out/00-desktop.png"
 echo "  00-desktop.png"
 

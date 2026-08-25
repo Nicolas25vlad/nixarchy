@@ -10,7 +10,15 @@ the parts that assume Arch, rather than reimplementing it in Nix.
 
 Tracking an upstream release is a source bump, not a re-port.
 
-![The Omarchy menu on NixOS](docs/screenshots/01-menu-root.png)
+![The Omarchy desktop on NixOS](docs/screenshots/00-desktop.png)
+
+| | |
+|---|---|
+| ![menu](docs/screenshots/01-menu-root.png) | ![install](docs/screenshots/02-install.png) |
+| ![service](docs/screenshots/03-install-service.png) | ![editor](docs/screenshots/04-install-editor.png) |
+| ![remove](docs/screenshots/09-remove.png) | ![update](docs/screenshots/10-update.png) |
+
+More in [`docs/screenshots/`](docs/screenshots).
 
 ## What works
 
@@ -282,6 +290,12 @@ Known gaps:
   `/etc/brave/policies/managed`
 - UPower is not enabled, so the battery widget is inert
 - Bluetooth's DBus object manager fails in the VM
+- Opening the menu blanks everything beneath it -- wallpaper *and* bar. The
+  menu's own surface is `color: "transparent"` and its scrim is the background
+  at alpha 0.5, but changing that alpha to 0.12 makes no difference to the
+  rendered pixel, so the compositor is not blending under the fullscreen
+  overlay layer at all. Not yet traced; it may be specific to software
+  rendering.
 
 ## License
 
