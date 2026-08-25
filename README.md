@@ -25,12 +25,14 @@ More in [`docs/screenshots/`](docs/screenshots).
 | | |
 |---|---|
 | Hyprland session, QuickShell bar, 22 themes | as upstream ships them |
-| `omarchy` CLI | all 429 subcommands |
+| `omarchy` CLI | all 427 subcommands, `omarchy commands --check` green |
 | **Install menu** | picks write to a Nix config, not pacman |
 | **Remove menu** | deselects apps, never touches your own config |
 | **Update menu** | `nix flake update` + `nixos-rebuild switch --flake` |
 | 37 apps from Omarchy's menu | 30 from nixpkgs, 5 as NixOS modules, 2 packaged here |
 | Learn menu | NixOS wiki, `search.nixos.org` packages and options |
+| Shell functions | the rc chain sourced into interactive bash |
+| RetroArch | 13 libretro cores, resolved from the store rather than `/usr/lib` |
 
 ## Why vendoring
 
@@ -43,8 +45,17 @@ package.path = home.."/.local/state/?.lua;"..home.."/.config/?.lua;"
 ```
 
 Point `OMARCHY_PATH` at a store path and the bins, the QML shell, the themes and
-the Lua defaults all follow. Only **32 of 438 scripts** touch `pacman`/`yay` —
-that's the entire distro-coupling surface.
+the Lua defaults all follow. Only **24 of 431 scripts** actually run
+`pacman`/`yay` — that's the entire distro-coupling surface.
+
+Ten of those are replaced outright, in `pkgs/omarchy/nix-bin/`: the ones the
+menus drive. The rest manage Arch release channels, keyrings and orphan
+pruning, none of which have a Nix meaning worth reimplementing — your flake
+input *is* the release channel, and the store has no orphans. Those fail either
+way, so a `pacman` shim only changes *how*: instead of `command not found`, you
+get told what replaced the command. It keeps pacman's contract (stderr,
+non-zero), so `omarchy version` and `omarchy debug`, which already wrap it in
+`2>/dev/null || fallback`, are unaffected.
 
 ## Installing apps
 
@@ -131,6 +142,50 @@ And in Home Manager:
   programs.nixarchy.defaultTheme = "tokyo-night";
 }
 ```
+
+### Shell functions
+
+Omarchy's [shell functions](https://omarchy.org/manual/shell-functions/) —
+`compress`, `dip`, `hdl`, `tdl`, `iso2sd`, the tmux and git-worktree helpers,
+20 in all — come from a bash rc chain that also sets aliases and `EDITOR`. It
+needs no patching here: every path in it resolves through `OMARCHY_PATH`.
+
+It is on by default, and opinionated: it aliases `ls` to eza, `cd` to zoxide
+and `g` to git. Turn it off if you bring your own shell config:
+
+```nix
+programs.nixarchy.bashIntegration = false;
+```
+
+Left on, it loads from `/etc/bashrc` — *before* `~/.bashrc` — so anything you
+define yourself still wins. Nothing in the desktop depends on it: the menus
+call the `omarchy-*` executables directly, not these functions.
+
+### RetroArch cores
+
+`pkgs.retroarch` is `retroarch-with-cores` built with an **empty** core list,
+so installing it plainly gives an emulator that can run nothing.
+`programs.nixarchy.apps.retroarch` therefore ships its own build with 13 cores
+— every core Omarchy's own picker offers that nixpkgs carries under a free
+licence, with bsnes and blastem standing in for the unfree snes9x and
+genesis-plus-gx.
+
+`retroarch-full` would be the obvious alternative and is the wrong one: it
+pulls unfree cores, and a single unfree package in the app list aborts the
+whole rebuild rather than failing on its own. To widen the set, set
+`nixpkgs.config.allowUnfree` and override the package:
+
+```nix
+programs.nixarchy.apps.retroarch = {
+  enable = true;
+  package = pkgs.retroarch.withCores (c: [ c.snes9x c.mame c.dolphin ]);
+};
+```
+
+Whatever you pick shows up in the menu picker: upstream filtered the core
+directory against 22 hardcoded names, which would have hidden anything you
+added, so nixarchy lists what is actually installed and takes the labels from
+`libretro-core-info`.
 
 ## Binary cache
 
@@ -358,6 +413,9 @@ Known gaps:
 
 - `brave-origin` has no published source; use `apps.brave` with policies in
   `/etc/brave/policies/managed`
+- RetroArch's default core set is free-licensed only, so snes9x, genesis-plus-gx,
+  mame and dolphin need `allowUnfree` and a `withCores` override
+- the shell rc chain is bash only, as upstream is; zsh and fish get nothing
 - UPower is not enabled, so the battery widget is inert
 - Bluetooth's DBus object manager fails in the VM
 
