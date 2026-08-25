@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# omarchy:summary=Install the named packages (declaratively, on NixOS).
+# omarchy:args=<packages...>
+
+# Upstream runs `sudo pacman -S`. Every omarchy-install-* script routes through
+# here -- 38 of them -- so replacing this one script is what stops them all
+# ending in
+#
+#   sudo: pacman: command not found
+#
+# Nothing is installed imperatively on NixOS: it would not survive the next
+# rebuild. Point at the declarative route instead, and fail, so a caller that
+# goes on to configure what it thinks it just installed stops here rather than
+# half-completing.
+set -euo pipefail
+
+file="${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy/apps.nix"
+
+echo
+echo "Cannot install [$*] here: packages are declared, not installed."
+echo
+echo "If Omarchy's Install menu offers it, pick it there -- that uncomments a"
+echo "line in $file, and Apply changes rebuilds with it."
+echo
+echo "Otherwise add it to your own configuration as environment.systemPackages"
+echo "and rebuild. Search for it first:"
+echo "  https://search.nixos.org/packages"
+exit 1

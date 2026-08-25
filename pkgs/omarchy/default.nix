@@ -316,6 +316,20 @@ stdenvNoCC.mkDerivation {
     sed -i 's/cp -aL /cp -aL --no-preserve=mode /g' \
       $out/share/omarchy/bin/omarchy-plugin-clone
 
+    # Both launchers accept a handful of browser desktop-file names and fall
+    # back to "chromium.desktop" for anything else. nixpkgs ships chromium's
+    # entry as chromium-browser.desktop, so xdg-settings returns a name that
+    # matches nothing, gets replaced by one that does not exist, and every web
+    # app fails with
+    #
+    #   Error: Path "--app=https://..." does not exist!
+    # Only launch-webapp has this list; launch-browser uses whatever
+    # xdg-settings returns and needed nothing beyond the path fix below.
+    substituteInPlace $out/share/omarchy/bin/omarchy-launch-webapp \
+      --replace-fail \
+        'google-chrome* | brave* | microsoft-edge* | opera* | vivaldi* | helium*) ;;' \
+        'google-chrome* | brave* | microsoft-edge* | opera* | vivaldi* | helium* | chromium*) ;;'
+
     # omarchy-launch-webapp and omarchy-launch-browser find the browser by
     # reading its .desktop out of {~/.local,~/.nix-profile,/usr}/share/
     # applications. On NixOS a system package's desktop file is under

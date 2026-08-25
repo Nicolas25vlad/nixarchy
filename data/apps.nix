@@ -106,8 +106,10 @@
     menuId = "install.editor.sublime";
     label = "Sublime Text";
     category = "Editor";
-    attr = "sublime4";
-    unfree = true;
+    # nixpkgs marks sublimetext4 broken -- "Packages, including core ones, do
+    # not run without plug-in host depending on insecure OpenSSL" -- and
+    # enabling it aborts the whole rebuild rather than failing on its own.
+    unavailable = "nixpkgs marks sublimetext4 broken over an insecure OpenSSL dependency; enabling it fails the rebuild.";
     arch = "sublime-text-4";
   };
 

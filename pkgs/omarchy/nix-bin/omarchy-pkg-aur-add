@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# omarchy:summary=The AUR has no equivalent here.
+# omarchy:args=<packages...>
+# omarchy:hidden=true
+set -euo pipefail
+
+echo
+echo "Cannot install [$*]: there is no AUR on NixOS."
+echo
+echo "Anything the AUR would have provided is either in nixpkgs, packaged by"
+echo "nixarchy already, or a small derivation you can write yourself."
+echo "  https://search.nixos.org/packages"
+exit 1

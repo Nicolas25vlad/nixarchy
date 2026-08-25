@@ -126,6 +126,31 @@ jobs:
           print(f"all {len(wanted)} Install rows are mapped")
           PY
 
+      - name: Verify every mapped app still evaluates
+        env:
+          NIXPKGS_ALLOW_UNFREE: "1"
+          NIXPKGS_ALLOW_BROKEN: "0"
+        run: |
+          # An app that nixpkgs marks broken aborts the user's whole rebuild,
+          # not just its own install -- sublimetext4 did exactly that. Catch it
+          # here instead of in someone's nixos-rebuild.
+          # From the data, not a grep: `ours` packages are ones nixpkgs does
+          # not carry, so testing them against nixpkgs would always fail.
+          attrs=$(nix eval --raw --impure --expr '
+            let a = import ./data/apps.nix;
+                want = builtins.filter (v: (v ? attr) && !(v.ours or false))
+                         (builtins.attrValues a);
+            in builtins.concatStringsSep " " (map (v: v.attr) want)')
+          bad=""
+          for a in $attrs; do
+            nix eval --impure --raw "nixpkgs#$a.name" >/dev/null 2>&1 || bad="$bad $a"
+          done
+          if [ -n "$bad" ]; then
+            echo "::error::these mapped packages do not evaluate:$bad"
+            exit 1
+          fi
+          echo "all $(echo "$attrs" | wc -w) mapped packages evaluate"
+
       - name: Verify runtime commands resolve
         run: |
           # The bins are unwrapped on purpose, so an incomplete runtimeDeps
