@@ -82,7 +82,8 @@ jobs:
           # stopped being applied would put a pacman updater back in front of
           # the user with no menu row to blame.
           for b in omarchy-update omarchy-update-available omarchy-pkg-install \
-                   omarchy-pkg-aur-install omarchy-pkg-present omarchy-pkg-missing; do
+                   omarchy-pkg-aur-install omarchy-pkg-present omarchy-pkg-missing \
+                   omarchy-voxtype-config; do
             f="result/share/omarchy/bin/$b"
             # Comments in the replacements name pacman when explaining what
             # upstream did, so only executable lines count.
