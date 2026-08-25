@@ -84,6 +84,11 @@ in
       # The single indirection point. bin/, shell/, themes/ and the Hyprland
       # Lua defaults are all resolved relative to this.
       sessionVariables.OMARCHY_PATH = "${cfg.package}/share/omarchy";
+
+      # The replacement omarchy-update reads this. It is a plain script inside
+      # the package with no way to see module options, and it is reached from
+      # the shell's bar widget and notifications as well as the menu.
+      sessionVariables.NIXARCHY_FLAKE = cfg.flake;
       variables.OMARCHY_DEFAULT_THEME = cfg.defaultTheme;
 
       # Omarchy's scripts are unwrapped by design (wrapping breaks the CLI's
@@ -141,6 +146,19 @@ in
 
     # bin/omarchy-brightness-display-ddc talks to monitors over i2c
     hardware.i2c.enable = true;
+
+    # mise is in Omarchy's base packages and its dev-env installers lean on it
+    # heavily. It downloads prebuilt runtimes, which cannot run against NixOS'
+    # non-standard loader, so it detects NixOS and falls back to compiling from
+    # source -- which then fails, because there is no compiler on the session
+    # PATH. mise's own message names the fix:
+    #
+    #   "The automatic all_compile=true default on NixOS caused python to
+    #    compile from source. Enable nix-ld to use precompiled binaries"
+    #
+    # This is what makes `omarchy install dev-env` work rather than print a
+    # wall of build errors.
+    programs.nix-ld.enable = lib.mkDefault true;
 
     boot.plymouth.enable = true;
 

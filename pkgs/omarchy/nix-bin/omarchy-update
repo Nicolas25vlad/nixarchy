@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# omarchy:summary=Update Omarchy and system packages
+# omarchy:examples=omarchy update
+
+# Replaces upstream's updater, which drives pacman: it prunes packages, builds
+# a snapper snapshot, refreshes the pacman keyring and runs a system upgrade.
+# None of that exists here, and its first act -- demanding 10 GiB free before
+# it will start -- is what a NixOS user sees instead of an update.
+#
+# Updating a NixOS host means moving the flake inputs forward and rebuilding,
+# so that is what this does. Rollback is `nixos-rebuild --rollback` or the boot
+# menu, which is why no snapshot is taken.
+
+set -euo pipefail
+
+flake="${NIXARCHY_FLAKE:-/etc/nixos}"
+
+red() { printf '\033[0;31m%s\033[0m\n' "$1"; }
+dim() { printf '\033[0;90m%s\033[0m\n' "$1"; }
+
+if [ ! -d "$flake" ]; then
+  red "No flake directory at $flake."
+  echo
+  echo "Set programs.nixarchy.flake to where your configuration lives, or"
+  echo "export NIXARCHY_FLAKE before running this."
+  exit 1
+fi
+
+echo "Updating from $flake"
+echo
+dim "This moves your flake inputs forward -- nixpkgs, nixarchy and Omarchy"
+dim "itself -- and then rebuilds. Your app selections are untouched."
+echo
+
+read -r -p "Update flake inputs and rebuild? [y/N] " reply
+case "$reply" in
+  [yY]*) ;;
+  *) echo "Nothing changed."; exit 0 ;;
+esac
+
+echo
+echo "==> nix flake update"
+nix flake update --flake "$flake"
+
+echo
+echo "==> nixos-rebuild switch"
+# Not exec'd: upstream's presentation wrapper prints a completion banner after
+# this returns, and exec would take that away.
+sudo nixos-rebuild switch --flake "$flake"
+
+echo
+echo "Updated. The previous generation is still in the boot menu if you need it."

@@ -249,6 +249,23 @@ stdenvNoCC.mkDerivation {
     install -Dm644 default/fonts/omarchy/omarchy.ttf \
       $out/share/fonts/truetype/omarchy.ttf
 
+    # Replace the bins that drive pacman. These are not reachable through the
+    # menu extension: the shell's bar widget and its "Update System"
+    # notification call omarchy-update directly from QML, so overriding a menu
+    # row would fix one of three entry points.
+    #
+    # Each replacement keeps its `# omarchy:summary=` line, because bin/omarchy
+    # discovers subcommands by grepping siblings for exactly that.
+    for replacement in ${./nix-bin}/*; do
+      name=$(basename "$replacement")
+      target=$out/share/omarchy/bin/$name
+      if [ ! -e "$target" ]; then
+        echo "nix-bin/$name replaces nothing in this Omarchy version" >&2
+        exit 1
+      fi
+      install -Dm755 "$replacement" "$target"
+    done
+
     # Wear the snowflake.
     substitute ${./menu-bar-widget.qml} \
       $out/share/omarchy/shell/plugins/menu/BarWidget.qml \

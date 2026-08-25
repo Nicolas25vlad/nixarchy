@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# omarchy:summary=Show the declarative app list instead of a package picker.
+# omarchy:examples=omarchy pkg install
+
+# Upstream offers a fuzzy picker over `pacman -Slq` and installs the selection
+# with `pacman -S`. Installing imperatively would not survive the next rebuild,
+# so the equivalent here is to edit the app selection and apply it.
+set -euo pipefail
+
+file="${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy/apps.nix"
+
+echo "Packages are declared, not installed one at a time."
+echo
+echo "Every app Omarchy offers is listed in:"
+echo "  $file"
+echo
+echo "Uncomment what you want -- or pick it from the Install menu, which"
+echo "uncomments it for you -- then run 'nixarchy-apply' to build and switch."
+echo
+echo "For something the menu does not offer, add it to your own configuration"
+echo "as environment.systemPackages."

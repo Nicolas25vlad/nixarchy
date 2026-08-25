@@ -67,6 +67,28 @@ jobs:
           fi
           echo "all executable scripts patched"
 
+      - name: Verify the pacman bins were replaced
+        run: |
+          # The shell's bar widget and its "Update System" notification call
+          # omarchy-update straight from QML, so a replacement that silently
+          # stopped being applied would put a pacman updater back in front of
+          # the user with no menu row to blame.
+          for b in omarchy-update omarchy-update-available omarchy-pkg-install \
+                   omarchy-pkg-aur-install omarchy-pkg-present omarchy-pkg-missing; do
+            f="result/share/omarchy/bin/$b"
+            # Comments in the replacements name pacman when explaining what
+            # upstream did, so only executable lines count.
+            if sed 's/#.*//' "$f" | grep -qE '\bpacman\b|\byay\b'; then
+              echo "::error::$b still drives pacman/yay"
+              exit 1
+            fi
+            grep -q 'omarchy:summary=' "$f" || {
+              echo "::error::$b lost its omarchy:summary= line; the CLI will not list it"
+              exit 1
+            }
+          done
+          echo "pacman bins replaced, metadata intact"
+
       - name: Verify runtime commands resolve
         run: |
           # The bins are unwrapped on purpose, so an incomplete runtimeDeps
