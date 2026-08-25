@@ -58,6 +58,19 @@
     memorySize = 8192;
     cores = 4;
     diskSize = 16384;
+
+    # Ephemeral root. `nix run .#vm` otherwise creates nixarchy-vm.qcow2 in
+    # the working directory and REUSES it on every later run, which makes a
+    # smoke test replay the previous run's state.
+    #
+    # That is not hypothetical: Omarchy persists every notification under
+    # ~/.local/state/omarchy/notifications/history/ and its shell replays that
+    # directory on start, so failures fixed in the package kept reappearing on
+    # screen from a stale disk long after the fix landed.
+    #
+    # Set this to a path if you want a VM whose state survives, and remember
+    # you then own clearing it.
+    diskImage = null;
     # The display backend is deliberately NOT pinned here. Hardcoding
     # `-device virtio-vga-gl -display gtk,gl=on` makes the VM refuse to start
     # anywhere without a GL-capable display -- CI, a serial console, an ssh

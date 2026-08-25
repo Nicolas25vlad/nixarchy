@@ -69,6 +69,15 @@ The display backend is passed at runtime rather than baked into the VM,
 because a hardcoded `virtio-vga-gl` makes qemu refuse to start anywhere
 without a GL-capable display -- CI, a serial console, an ssh session.
 
+**The VM's disk is ephemeral.** By default `nix run .#vm` writes a
+`nixarchy-vm.qcow2` into the working directory and reuses it forever, which
+makes a smoke test replay the previous run's state. Omarchy persists every
+notification under `~/.local/state/omarchy/notifications/history/` and its
+shell replays that directory on start, so package bugs kept reappearing on
+screen from a stale disk long after they were fixed. Set
+`virtualisation.diskImage` to a path in `vm/configuration.nix` if you want
+state to survive.
+
 ## Development
 
 ```sh
@@ -124,9 +133,9 @@ consumers not to, and overriding forfeits their binary cache. Keep
 Early.
 
 Verified so far: the vendored tree builds, the `omarchy` CLI resolves all 429 of
-its subcommands, the full NixOS closure builds, and the VM boots with Home
-Manager activation completing. Whether the QuickShell bar actually renders is
-still open -- that needs a graphical boot, not a headless one.
+its subcommands, the full NixOS closure builds, the VM boots with Home Manager
+activation completing, and **the QuickShell bar renders** under Hyprland's Lua
+config -- which is the milestone this port was built to reach.
 
 Known gaps:
 
