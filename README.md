@@ -136,6 +136,20 @@ And in Home Manager:
 }
 ```
 
+## Binary cache
+
+Enabling nixarchy otherwise means compiling a compositor, because it pins
+Hyprland ahead of nixpkgs. The module adds both caches for you:
+
+```
+https://nixarchy.cachix.org   the vendored tree, this flake's own packages,
+                              and Hyprland at whatever commit is pinned
+https://hyprland.cachix.org   hyprwm's own builds
+```
+
+`mkForce` them away in `nix.settings` if you would rather trust neither and
+build from source.
+
 ## Try it in a VM
 
 ```sh

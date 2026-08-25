@@ -56,11 +56,17 @@ in
         "flakes"
       ];
 
-      # Nixarchy pins Hyprland ahead of nixpkgs, so without this the
-      # compositor is built from source. mkForce it away if you would rather
-      # not trust the cache.
-      substituters = [ "https://hyprland.cachix.org" ];
+      # Without these, enabling nixarchy means compiling a compositor.
+      # hyprland.cachix.org covers Hyprland when the pinned commit is one
+      # hyprwm built; nixarchy.cachix.org covers it when it is not, plus the
+      # vendored Omarchy tree and the packages this flake builds itself.
+      # mkForce them away if you would rather trust neither.
+      substituters = [
+        "https://nixarchy.cachix.org"
+        "https://hyprland.cachix.org"
+      ];
       trusted-public-keys = [
+        "nixarchy.cachix.org-1:05JOuIlsQOWY2/5DQMq7JEA1hwlhgvmMWowMfka8mMM="
         "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE="
       ];
     };
