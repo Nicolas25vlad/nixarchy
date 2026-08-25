@@ -53,10 +53,21 @@ And in Home Manager:
 ## Try it in a VM
 
 ```sh
-nix run github:olafkfreund/nixarchy#vm
+# graphical -- this is the one that shows the desktop
+QEMU_OPTS="-device virtio-vga-gl -display gtk,gl=on" \
+  nix run github:olafkfreund/nixarchy#vm
+
+# headless -- boots to a serial console, for reading the journal when the
+# graphical session is the thing that is broken
+QEMU_OPTS="-display none -serial mon:stdio" \
+  nix run github:olafkfreund/nixarchy#vm
 ```
 
-Autologs into a session as `omarchy` / `omarchy`.
+Autologs in as `omarchy` / `omarchy`.
+
+The display backend is passed at runtime rather than baked into the VM,
+because a hardcoded `virtio-vga-gl` makes qemu refuse to start anywhere
+without a GL-capable display -- CI, a serial console, an ssh session.
 
 ## Development
 
@@ -64,7 +75,7 @@ Autologs into a session as `omarchy` / `omarchy`.
 nix develop            # or `direnv allow`
 nix build .#omarchy    # fast — just the vendored tree
 nix flake check        # everything
-nix run .#vm           # smoke test
+nix run .#vm           # smoke test (see "Try it in a VM" for QEMU_OPTS)
 ```
 
 ## Design notes
@@ -94,15 +105,30 @@ them under `home.file` would make every theme switch fail.
 ### Hyprland comes from upstream, not nixpkgs
 
 Omarchy 4.x needs ≥ 0.55 for `hl.bind` / `hl.window_rule` / `hl.on`; nixpkgs is
-on 0.54.3. The flake pins `github:hyprwm/Hyprland/v0.56.2` and deliberately does
-**not** set `inputs.nixpkgs.follows` on it — hyprwm asks consumers not to, and
-overriding forfeits their binary cache. Keep `programs.nixarchy.useHyprlandCache`
-on unless you enjoy compiling a compositor.
+on 0.54.3.
+
+The flake pins a **commit**, not the `v0.56.2` tag, because that tag does not
+build against its own `flake.lock`: its `CMakeLists.txt` asks for
+`find_package(glaze 7...<8)` while `nix/overlays.nix` feeds it the glaze 8.0.0
+from its locked nixpkgs. `find_package` fails, CMake falls back to cloning glaze
+over the network, and the build sandbox has none. Upstream dropped the version
+bound after tagging, and `v0.56.2` is the newest tag — so there is no fixed tag
+to move to. A commit is just as reproducible; bump it deliberately.
+
+`inputs.nixpkgs.follows` is deliberately **not** set on it — hyprwm asks
+consumers not to, and overriding forfeits their binary cache. Keep
+`programs.nixarchy.useHyprlandCache` on unless you enjoy compiling a compositor.
 
 ## Status
 
-Early. The VM smoke test is the current milestone: does the QuickShell bar come
-up? Known gaps:
+Early.
+
+Verified so far: the vendored tree builds, the `omarchy` CLI resolves all 429 of
+its subcommands, the full NixOS closure builds, and the VM boots with Home
+Manager activation completing. Whether the QuickShell bar actually renders is
+still open -- that needs a graphical boot, not a headless one.
+
+Known gaps:
 
 - `elephant` (walker's backend, 32 call sites) is not in nixpkgs
 - The ~31 Omarchy-original packages (`omacut`, `omawrite`, `herdr`, `omarchy-nvim`…)

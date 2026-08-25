@@ -58,10 +58,14 @@
     memorySize = 8192;
     cores = 4;
     diskSize = 16384;
-    qemu.options = [
-      "-device virtio-vga-gl"
-      "-display gtk,gl=on,show-cursor=on"
-    ];
+    # The display backend is deliberately NOT pinned here. Hardcoding
+    # `-device virtio-vga-gl -display gtk,gl=on` makes the VM refuse to start
+    # anywhere without a GL-capable display -- CI, a serial console, an ssh
+    # session -- which is precisely where the journal needs reading when the
+    # graphical session is the broken thing. Choose one at runtime instead:
+    #
+    #   headless:  QEMU_OPTS="-display none -serial mon:stdio" nix run .#vm
+    #   with GL:   QEMU_OPTS="-device virtio-vga-gl -display gtk,gl=on" nix run .#vm
   };
 
   # Serial console keeps the journal readable from the host when the
