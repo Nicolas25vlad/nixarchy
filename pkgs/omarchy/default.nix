@@ -304,6 +304,18 @@ stdenvNoCC.mkDerivation {
         sourceSize.width: 4096"
     done
 
+    # Same store-mode problem as omarchy-theme-set, in a different script.
+    # omarchy-plugin-clone copies a first-party plugin out of $OMARCHY_PATH
+    # with `cp -aL`, and -a preserves mode -- so its staging directory lands
+    # read-only and it cannot clean up after itself:
+    #
+    #   rm: cannot remove '.../plugins/.clone.XXXXXX/manifest.json':
+    #   Permission denied
+    #
+    # The clone never completes and nothing appears in the plugin list.
+    sed -i 's/cp -aL /cp -aL --no-preserve=mode /g' \
+      $out/share/omarchy/bin/omarchy-plugin-clone
+
     # omarchy-launch-webapp and omarchy-launch-browser find the browser by
     # reading its .desktop out of {~/.local,~/.nix-profile,/usr}/share/
     # applications. On NixOS a system package's desktop file is under

@@ -54,6 +54,20 @@
   environment.sessionVariables = {
     WLR_RENDERER_ALLOW_SOFTWARE = "1";
     WLR_NO_HARDWARE_CURSORS = "1";
+
+    # GPU-accelerated apps -- kitty, alacritty, LocalSend and anything else
+    # built on GL -- die on startup here with
+    #
+    #   EGL: No EGLConfigs returned
+    #   EGL: Failed to find a suitable EGLConfig
+    #
+    # even though the guest has swrast, virtio_gpu and a render node: qemu's
+    # virgl path does not hand out a usable config. llvmpipe does, and with
+    # this set the same launch produces no EGL errors at all.
+    #
+    # VM only. On a machine with a real GPU this would force every GL app
+    # onto the CPU, which is exactly what you do not want.
+    LIBGL_ALWAYS_SOFTWARE = "1";
   };
 
   # SSH, so the VM can be driven and inspected from the host. Debugging a
