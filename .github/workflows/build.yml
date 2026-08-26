@@ -302,3 +302,19 @@ jobs:
         # selection into the flake. Nothing else here proves that the Install
         # menu actually installs anything.
         run: nix build .#checks.x86_64-linux.session --print-build-logs
+
+      # Both of these were written after three bugs shipped that every other
+      # check here was blind to -- and then nothing ran them, which is how the
+      # gap they exist to close stayed open a second time.
+      - name: Build onto a config that already exists
+        # An overridden package, its own Hyprland, greetd already greeting.
+        # Built rather than evaluated: a desktop file colliding with a real
+        # package, two nixpkgs instances, and runtime dependencies in two
+        # profiles at once are none of them evaluation errors.
+        run: nix build .#checks.x86_64-linux.integration --print-build-logs
+
+      - name: Boot the Omarchy session beside another Hyprland
+        # A foreign hyprland.lua in place, the session started from its own
+        # .desktop, and the desktop asserted to render -- the arrangement the
+        # README tells people with an existing Hyprland to use.
+        run: nix build .#checks.x86_64-linux.coexist --print-build-logs
