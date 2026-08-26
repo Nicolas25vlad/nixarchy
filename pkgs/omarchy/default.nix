@@ -544,6 +544,10 @@ stdenvNoCC.mkDerivation {
     # See the file for what is sourced as-is and what had to be rewritten.
     install -Dm644 ${./zsh-rc} $out/share/omarchy/default/zsh/rc
 
+    # And fish, which cannot source any of it -- see the file for why nothing
+    # is translated and everything is derived from the same bash instead.
+    install -Dm644 ${./fish-rc} $out/share/omarchy/default/fish/rc
+
     # Wear the name. Omarchy's logo is a pixel font on a 15-unit grid and
     # logo.png is logo.svg rendered 800px wide and tinted, so "NIXARCHY" can be
     # built from the same source: ARCHY is upstream's own five glyphs moved

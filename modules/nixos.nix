@@ -281,6 +281,13 @@ in
       zsh.interactiveShellInit = lib.mkIf (cfg.shellIntegration && config.programs.zsh.enable) ''
         source ${cfg.package}/share/omarchy/default/zsh/rc
       '';
+
+      # fish, same condition. Its rc derives everything from the same bash
+      # files rather than translating them, so it tracks upstream the way the
+      # other two do.
+      fish.interactiveShellInit = lib.mkIf (cfg.shellIntegration && config.programs.fish.enable) ''
+        source ${cfg.package}/share/omarchy/default/fish/rc
+      '';
     };
 
     environment = {

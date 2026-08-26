@@ -26,17 +26,21 @@ pkgs.testers.runNixOSTest {
       inputs.home-manager.nixosModules.home-manager
     ];
 
-    # zsh alongside bash, so the shell chain is exercised in the shell most
-    # people who already have a NixOS config are using. Upstream ships bash
-    # only, so without this the zsh half is untested by construction.
-    programs.zsh.enable = true;
+    programs = {
+      # zsh and fish alongside bash. Upstream ships a bash rc chain only, so
+      # without these two the other halves are untested by construction -- and
+      # they are the shells people who already have a NixOS config tend to be
+      # running.
+      zsh.enable = true;
+      fish.enable = true;
 
-    programs.nixarchy = {
-      enable = true;
-      # Somewhere real for nixarchy-apply to copy the selection into. The VM
-      # in vm/configuration.nix builds a full flake there; this test only
-      # needs the copy to have a destination.
-      flake = "/etc/nixos";
+      nixarchy = {
+        enable = true;
+        # Somewhere real for nixarchy-apply to copy the selection into. The VM
+        # in vm/configuration.nix builds a full flake there; this test only
+        # needs the copy to have a destination.
+        flake = "/etc/nixos";
+      };
     };
 
     # Log in the way a user actually does: through SDDM's greeter. An earlier
@@ -300,6 +304,33 @@ pkgs.testers.runNixOSTest {
         f"Omarchy's functions did not reach zsh: {shell_out}")
     assert "HAVE_LS_ALIAS" in shell_out, (
         f"Omarchy's aliases did not reach zsh: {shell_out}")
+
+    # fish gets the same names, by a different route: it cannot source any of
+    # upstream's files, so its rc derives them from the same bash instead --
+    # the functions stay bash implementations behind a fish wrapper.
+    # Written to a file rather than passed inline. Three of these probes have
+    # now been broken by the same thing: the `user` template wraps its
+    # argument in su -c '...', and any single quote in a fish or zsh one-liner
+    # closes it early and runs something else entirely.
+    machine.succeed(
+        "cat > /tmp/fish-probe.fish <<'PROBE'\n"
+        "functions -q compress; and echo HAVE_COMPRESS\n"
+        "functions -q tdl; and echo HAVE_TDL\n"
+        "alias | string match -q '*cd ..*'; and echo HAVE_ALIASES\n"
+        "test -n \"$BAT_THEME\"; and echo HAVE_ENV\n"
+        "PROBE\n")
+    fish_out = machine.succeed(
+        user % "fish -i -c \"source /tmp/fish-probe.fish\" 2>&1")
+    print(f"fish: {fish_out.split()}")
+    for marker in ["HAVE_COMPRESS", "HAVE_TDL", "HAVE_ALIASES", "HAVE_ENV"]:
+        assert marker in fish_out, f"{marker} missing from fish: {fish_out}"
+
+    # A wrapper that only defines the name is worthless -- run one and check
+    # it reaches upstream's bash implementation.
+    ran = machine.succeed(
+        user % 'fish -i -c "compress" 2>&1 || true')
+    assert "tar" in ran, (
+        f"the fish wrapper did not reach the bash implementation: {ran}")
 
     # And the same in bash, which must not have regressed.
     bash_out = machine.succeed(
