@@ -10,6 +10,11 @@ the parts that assume Arch, rather than reimplementing it in Nix.
 
 Tracking an upstream release is a source bump, not a re-port.
 
+![A tour of nixarchy: the greeter, the menus, themes and the app selection](docs/nixarchy-demo.gif)
+
+*Login through the branded greeter, the Omarchy menu, four themes, and an app
+selected and applied — captured from a real VM by `nix build .#demo`.*
+
 ![The Omarchy desktop on NixOS](docs/screenshots/00-desktop.jpg)
 
 | the menu | Install |
@@ -17,6 +22,7 @@ Tracking an upstream release is a source bump, not a re-port.
 | ![menu](docs/screenshots/01-menu-root.jpg) | ![install](docs/screenshots/02-install.jpg) |
 | **Remove** | **Update** |
 | ![remove](docs/screenshots/09-remove.jpg) | ![update](docs/screenshots/10-update.jpg) |
+| ![greeter](docs/screenshots/15-greeter.jpg) | ![app selection](docs/screenshots/16-app-selection.jpg) |
 
 More in [`docs/screenshots/`](docs/screenshots).
 
@@ -223,11 +229,24 @@ previous run's state — Omarchy persists every notification under
 `~/.local/state/omarchy/notifications/history/` and replays it on start, so
 fixed bugs kept reappearing from a stale disk.
 
-## Screenshots
+## Screenshots and the screencast
 
-`docs/capture-screenshots.sh` captures every menu from a running VM. It has to
-run against a **graphical** VM: with `-display none` nothing consumes the
-compositor's frames, page flips never complete, and `grim` blocks forever.
+`nix build .#demo` boots a machine, logs in through the greeter, drives a tour
+of it and writes the frames plus an mp4 and a GIF:
+
+```sh
+nix build .#demo
+ls result/screenshots/          # every step, numbered
+cp result/nixarchy-demo.gif docs/nixarchy-demo.gif
+```
+
+It needs no display and no SSH, because the frames come from qemu's own
+screendump rather than a compositor screencopy -- `grim` cannot help here, as
+nothing consumes the frames and it blocks forever.
+
+`docs/capture-screenshots.sh` is the older path and still captures menus the
+tour does not visit. It has to run against a **graphical** VM, for that same
+reason:
 
 ```sh
 ssh -p 2222 omarchy@localhost 'bash -s' < docs/capture-screenshots.sh
