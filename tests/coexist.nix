@@ -83,6 +83,11 @@ pkgs.testers.runNixOSTest {
         machine.succeed(f"test -s /home/omarchy/.config/hypr/{module}")
     print("seed kept the user's hyprland.lua and installed Omarchy's modules")
 
+    # The bus the launch below needs belongs to the user manager, which
+    # autologin starts -- so wait for it rather than assume it is up.
+    machine.wait_for_unit("user@1000.service")
+    machine.wait_until_succeeds("test -S /run/user/1000/bus")
+
     # Launch the session the way a greeter would: whatever Exec= says.
     session = "/run/current-system/sw/share/wayland-sessions/omarchy.desktop"
     machine.succeed(f"test -s {session}")
@@ -92,6 +97,17 @@ pkgs.testers.runNixOSTest {
     machine.succeed(
         "systemd-run --uid=1000 --setenv=XDG_RUNTIME_DIR=/run/user/1000 "
         "--setenv=WLR_RENDERER_ALLOW_SOFTWARE=1 --setenv=XDG_SESSION_TYPE=wayland "
+        # uwsm needs a session bus and will not autolaunch one, so without this
+        # the session dies on
+        #
+        #   org.freedesktop.DBus.Error.NotSupported: Unable to autolaunch a
+        #   dbus-daemon without a $DISPLAY for X11
+        #
+        # and the screen stays pure black. It passed here for a while anyway,
+        # picking up a bus by luck, and failed on a CI runner that did not --
+        # which is the useful kind of flake, since the fix is the same either
+        # way.
+        "--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
         f"--unit=omarchy-session --collect {exec}")
 
     # The compositor, then the shell it is supposed to start.
@@ -105,9 +121,6 @@ pkgs.testers.runNixOSTest {
     machine.wait_until_succeeds(
         "test -s $(readlink -f "
         "/home/omarchy/.local/state/omarchy/current/background)", timeout=120)
-    machine.sleep(20)
-    machine.screenshot("coexist-desktop")
-
     # And that it is actually drawn, not merely running -- the same check the
     # session test uses, for the same reason: every other assertion here passed
     # once while the screen was black.
@@ -120,20 +133,32 @@ pkgs.testers.runNixOSTest {
             capture_output=True, text=True, check=True)
         return tuple(int(out.stdout.strip()[i:i + 2], 16) for i in (0, 2, 4))
 
-    shot = os.path.join(os.environ["out"], "coexist-desktop.png")
     paper = machine.succeed(
         "readlink -f /home/omarchy/.local/state/omarchy/current/background").strip()
     machine.copy_from_machine(paper, "")
     local_paper = os.path.join(os.environ["out"], os.path.basename(paper))
-
-    s_r, s_g, s_b = avg(shot)
     w_r, w_g, w_b = avg(local_paper)
-    delta = abs(s_r - w_r) + abs(s_g - w_g) + abs(s_b - w_b)
-    print(f"screen #{s_r:02X}{s_g:02X}{s_b:02X} "
-          f"wallpaper #{w_r:02X}{w_g:02X}{w_b:02X} delta {delta}")
-    assert delta < 120, (
-        f"the Omarchy session came up but does not look like its wallpaper "
-        f"(delta {delta}) -- the entry point loaded, the desktop did not.")
+
+    # Retried rather than slept at. A fixed wait is a guess about how fast the
+    # machine is: 20 seconds was enough here and not on a CI runner, where this
+    # failed with the desktop still black. Retrying converges on whatever the
+    # machine actually needs, and still fails if it never draws.
+    delta = None
+    for attempt in range(12):
+        machine.sleep(5)
+        machine.screenshot("coexist-desktop")
+        shot = os.path.join(os.environ["out"], "coexist-desktop.png")
+        s_r, s_g, s_b = avg(shot)
+        delta = abs(s_r - w_r) + abs(s_g - w_g) + abs(s_b - w_b)
+        print(f"attempt {attempt}: screen #{s_r:02X}{s_g:02X}{s_b:02X} "
+              f"wallpaper #{w_r:02X}{w_g:02X}{w_b:02X} delta {delta}")
+        if delta < 120:
+            break
+
+    assert delta is not None and delta < 120, (
+        f"the Omarchy session came up but never looked like its wallpaper "
+        f"(delta {delta} after 60s) -- the entry point loaded, the desktop "
+        "did not.")
     print("the Omarchy session renders its desktop beside a foreign hyprland.lua")
   '';
 }
