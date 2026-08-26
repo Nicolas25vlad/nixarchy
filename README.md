@@ -540,8 +540,14 @@ Known gaps:
   for until somebody asks
 - Install rows that name an Arch package tell you the nixpkgs name and the
   option to put it in, rather than installing it. Fonts, the packages
-  `omarchy install dev-env` adds behind a language, and Ollama are all mapped;
-  anything unmapped still gets the generic answer
+  `omarchy install dev-env` adds behind a language, Ollama and the gaming
+  rows' dependencies are all mapped; anything unmapped still gets the generic
+  answer
+- Battle.net and GeForce NOW still want a hand: the first needs
+  `pkgs.umu-launcher` and `hardware.graphics.enable32Bit`, the second
+  `services.flatpak.enable` and then `flatpak install flathub
+  com.nvidia.geforcenow`. Their rows name both. Xbox Cloud Gaming needs
+  nothing -- it is a web app, and never touches a package manager
 - Chromium's theme *accent* is not applied: omarchy-theme-set-browser writes
   `/etc/chromium/policies/managed/color.json` as the user, which NixOS's
   store-managed `/etc` has no place for. Light/dark is unaffected -- that

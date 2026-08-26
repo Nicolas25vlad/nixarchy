@@ -65,6 +65,40 @@
     kind = "php-extension";
   };
 
+  # ── Install > Gaming ────────────────────────────────────────────────────
+  # Battle.net runs a Windows installer under umu-launcher. The launcher is
+  # packaged; the rest of that script is wine prefixes under $HOME and works
+  # unchanged.
+  umu-launcher = {
+    attr = "umu-launcher";
+    kind = "package";
+  };
+
+  # omarchy-install-gaming-gpu-lib32 adds the 32-bit halves of whichever
+  # driver it detects. NixOS does not install those as packages -- one option
+  # turns the 32-bit graphics stack on for every driver at once.
+  lib32-nvidia-utils = {
+    attr = "hardware.graphics.enable32Bit = true";
+    kind = "nixos-option";
+  };
+  lib32-vulkan-intel = {
+    attr = "hardware.graphics.enable32Bit = true";
+    kind = "nixos-option";
+  };
+  lib32-vulkan-radeon = {
+    attr = "hardware.graphics.enable32Bit = true";
+    kind = "nixos-option";
+  };
+
+  # GeForce NOW ships as a Flatpak. Flatpak on NixOS is a service, not just a
+  # package: without the service there is no system-wide installation for it
+  # to land in.
+  flatpak = {
+    attr = "services.flatpak.enable = true";
+    kind = "nixos-option";
+    note = "then: flatpak install flathub com.nvidia.geforcenow";
+  };
+
   # ── Install > AI ────────────────────────────────────────────────────────
   # The row picks ollama-cuda or ollama-rocm from what it detects; nixpkgs
   # splits the same way.

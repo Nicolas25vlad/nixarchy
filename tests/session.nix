@@ -333,6 +333,32 @@ pkgs.testers.runNixOSTest {
         user % "omarchy-pkg-add some-unmapped-thing 2>&1 || true")
     assert "search.nixos.org" in advice, advice
 
+    # ---- the gaming rows --------------------------------------------------
+    # Three rows, three different shapes. Battle.net and GeForce NOW route
+    # through omarchy-pkg-add and are answered from the table; Xbox Cloud is a
+    # web app and touches no package manager at all.
+    advice = machine.succeed(
+        user % "omarchy-pkg-add umu-launcher lib32-nvidia-utils 2>&1 || true")
+    assert "pkgs.umu-launcher" in advice, advice
+    assert "hardware.graphics.enable32Bit" in advice, (
+        "the 32-bit driver halves are a system option on NixOS, not packages, "
+        f"and saying systemPackages would send someone nowhere: {advice}")
+
+    advice = machine.succeed(user % "omarchy-pkg-add flatpak 2>&1 || true")
+    assert "services.flatpak.enable" in advice, advice
+
+    # Xbox Cloud only fails here for want of a network -- the icon download is
+    # under `set -e`. What matters is that it gets that far: no pacman, no
+    # shim, nothing NixOS-specific in its way. Asserted as "the failure is the
+    # icon fetch", because "it failed" alone would also be true if it were
+    # dying on a package manager.
+    out = machine.succeed(
+        user % ('omarchy-webapp-install "Test App" "https://example.invalid" '
+                '"https://example.invalid/icon.png" 2>&1 || true'))
+    print(f"webapp-install offline: {out.strip()[:120]}")
+    assert "pacman" not in out and "omarchy-pkg-add" not in out, (
+        f"the web app path reached a package manager: {out}")
+
     # ---- switching to a font that is already installed --------------------
     # Upstream's row is `omarchy-pkg-add <pkg> && omarchy-font-set '<family>'`,
     # so the switch never ran here even when the font was present. This module

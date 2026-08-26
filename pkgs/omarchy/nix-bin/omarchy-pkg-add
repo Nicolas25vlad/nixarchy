@@ -56,6 +56,14 @@ for pkg in "$@"; do
       echo
       echo "Rebuild, then pick the font again -- it sets it once it can find it."
       ;;
+    nixos-option)
+      # Not a package at all: 32-bit graphics and flatpak are switches on the
+      # system, and telling someone to add them to systemPackages would send
+      # them looking for something that does not exist.
+      echo "$pkg is not a package on NixOS. It is a system option:"
+      echo
+      echo "  $attr;"
+      ;;
     php-extension)
       echo "$pkg is a PHP extension. On NixOS these are built into the"
       echo "interpreter rather than added beside it:"
