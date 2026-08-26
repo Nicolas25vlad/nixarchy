@@ -135,6 +135,25 @@ pkgs.testers.runNixOSTest {
     print("=========== is the shell alive? ===========")
     print(machine.succeed("pgrep -a quickshell || echo 'NO QUICKSHELL PROCESS'"))
 
+    # ---- power ----------------------------------------------------------
+    # omarchy-powerprofiles-set autodetect reads this exact property, and it
+    # reads it as `2>/dev/null` with a fallback: with no UPower the call fails
+    # silently and every machine looks like it is on AC forever. So assert the
+    # call succeeds, not that a unit is running -- UPower is DBus-activated,
+    # so an activatable name is the whole contract.
+    onbattery = machine.succeed(
+        "busctl get-property org.freedesktop.UPower /org/freedesktop/UPower "
+        "org.freedesktop.UPower OnBattery").strip()
+    print(f"UPower OnBattery -> {onbattery}")
+    assert onbattery.startswith("b "), (
+        f"UPower did not answer on DBus (got {onbattery!r}); "
+        "omarchy-powerprofiles-set autodetect would silently assume AC.")
+
+    # The VM has no battery, so `false` is the correct answer here. This
+    # asserts the channel works, not the value -- a real charge state can only
+    # be checked on hardware.
+    machine.succeed("powerprofilesctl get")
+
     # ---- does the wallpaper actually render? ----------------------------
     # Everything else here proves the tree assembles. This proves the desktop
     # is not black -- which every other check passed while it was.

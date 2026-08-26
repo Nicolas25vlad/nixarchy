@@ -181,6 +181,13 @@ in
 
       # power-profiles-daemon is in base.packages
       power-profiles-daemon.enable = true;
+
+      # The bar's battery widget and the power panel both read UPower over
+      # DBus, and omarchy-powerprofiles-set autodetect gates on its OnBattery
+      # property. That read is `2>/dev/null` with a fallback, so without the
+      # daemon it does not fail -- it silently concludes you are on AC and
+      # never switches to power-saver.
+      upower.enable = true;
     };
 
     # install/config/docker.sh

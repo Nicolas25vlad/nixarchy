@@ -420,7 +420,6 @@ Known gaps:
 - RetroArch's default core set is free-licensed only, so snes9x, genesis-plus-gx,
   mame and dolphin need `allowUnfree` and a `withCores` override
 - the shell rc chain is bash only, as upstream is; zsh and fish get nothing
-- UPower is not enabled, so the battery widget is inert
 - Bluetooth's DBus object manager fails in the VM
 
 ## License
