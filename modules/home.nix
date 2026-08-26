@@ -29,6 +29,37 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Omarchy's desktop is its Hyprland config: hyprland.lua requires
+    # autostart.lua, which is what starts the bar, and bindings.lua, which is
+    # every keybinding the manual documents. The seed below is --no-clobber, so
+    # a hyprland.lua that Home Manager already owns is kept and the other seven
+    # files land beside it, loaded by nothing.
+    #
+    # That failure is silent and total: every Omarchy binary, menu and theme
+    # installs, `nixarchy` looks like it worked, and the session that comes up
+    # is the user's own with no bar and none of the keybindings. Worth a
+    # warning rather than leaving someone to work it out from an empty bar.
+    warnings =
+      let
+        ownsHyprConfig =
+          (config.wayland.windowManager.hyprland.enable or false)
+          || lib.any (n: lib.hasPrefix "hypr/" n) (lib.attrNames config.xdg.configFile);
+      in
+      lib.optional ownsHyprConfig ''
+        nixarchy: ~/.config/hypr is already managed by Home Manager
+        (wayland.windowManager.hyprland, or an xdg.configFile "hypr/..." entry).
+
+        Omarchy's hyprland.lua will NOT be installed -- the seed never
+        overwrites a file you own -- so autostart.lua and bindings.lua will sit
+        in ~/.config/hypr unread, and the session will come up without
+        Omarchy's bar or keybindings.
+
+        Either drop your own Hyprland config and let Omarchy own the session,
+        or keep it and treat nixarchy as a source of applications and menus
+        rather than a desktop. Both are reasonable; silently getting the second
+        while expecting the first is not.
+      '';
+
     home = {
       packages = [ cfg.package ] ++ cfg.package.passthru.runtimeDeps;
 
@@ -49,6 +80,22 @@ in
             "$src"/. "$dest"/ 2>/dev/null || true
         }
 
+        # Report what was kept rather than replaced. Without this the seed is
+        # silent about the one case that matters -- a hyprland.lua owned by
+        # something else, which leaves Omarchy's session files unread.
+        note_kept() {
+          local src="$1" dest="$2" f
+          [ -d "$src" ] || return 0
+          for f in "$src"/*; do
+            [ -f "$f" ] || continue
+            if [ -e "$dest/$(basename "$f")" ] \
+              && ! ${pkgs.diffutils}/bin/diff -q \
+                "$f" "$dest/$(basename "$f")" >/dev/null 2>&1; then
+              echo "nixarchy: kept your $dest/$(basename "$f"), not Omarchy's"
+            fi
+          done
+        }
+
         # The whole of config/, not a chosen two of it. Upstream's own docs
         # point at ~/.config/foot/foot.ini and ~/.config/starship.toml, and
         # omarchy-theme-set-foot, btop's color_theme and the tmux keybindings
@@ -56,6 +103,7 @@ in
         # starship on its stock prompt, tmux without Omarchy's prefix and
         # keybindings, and foot and btop unthemed.
         seed_dir "${omarchyPath}/config" "${config.xdg.configHome}"
+        note_kept "${omarchyPath}/config/hypr" "${config.xdg.configHome}/hypr"
 
         # install/user/theme.sh. btop.conf asks for a theme named "current",
         # and omarchy-theme-set-templates renders btop.theme into the current
