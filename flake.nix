@@ -230,6 +230,7 @@
         session = import ./tests/session.nix {
           inherit inputs;
           pkgs = pkgsFor.${system};
+          inherit (self.packages.${system}) doctor;
         };
         # Boots the Omarchy session on a machine whose hyprland.lua belongs to
         # somebody else -- the case the session entry exists for.

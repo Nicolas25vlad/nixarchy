@@ -441,14 +441,32 @@ stdenvNoCC.mkDerivation {
     # absent from the launcher, and `omarchy webapp` can only add new ones.
     install -d $out/share/applications $out/share/icons/hicolor/256x256/apps
     for desktop in ${src}/applications/*.desktop; do
+      base=$(basename "$desktop")
+
       # foot, imv and mpv already ship these, and two identical relative paths
       # make buildEnv refuse to construct the profile at all. Upstream carries
       # them because on Arch it owns /usr/share/applications outright.
-      case "$(basename "$desktop")" in
+      case "$base" in
         foot.desktop | imv.desktop | mpv.desktop) continue ;;
       esac
-      install -m644 "$desktop" $out/share/applications/
+
+      # Everything else is prefixed. These are Omarchy's web apps, and their
+      # names are the names of real programs: a machine with the zoom package
+      # installed has its own share/applications/Zoom.desktop, and buildEnv
+      # refuses to build a profile containing both -- which is a rebuild that
+      # fails for having installed a desktop, with no way to tell why from the
+      # message. Prefixing makes a collision impossible with any package,
+      # including ones that do not exist yet.
+      #
+      # Only the filename changes; Name= still reads "Zoom", so the launcher
+      # shows what upstream shows.
+      install -m644 "$desktop" "$out/share/applications/omarchy-$base"
     done
+
+    # The one place a shipped entry is named rather than merely launched.
+    substituteInPlace $out/share/omarchy/bin/omarchy-provision-user \
+      --replace-fail 'xdg-mime default HEY.desktop' \
+        'xdg-mime default omarchy-HEY.desktop'
 
     # Each Icon= key is the file's basename lowercased with runs of non
     # alphanumerics collapsed to a dash -- safe_icon_name() in

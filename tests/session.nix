@@ -1,4 +1,10 @@
-{ inputs, pkgs }:
+{
+  inputs,
+  pkgs,
+  # The doctor is a package, not part of the module, so the test has to be
+  # handed it rather than finding it in the system profile.
+  doctor,
+}:
 # Drives a real Omarchy session and reports what it logged.
 #
 # This exists because the failure that matters -- "the panel shows for a few
@@ -269,6 +275,69 @@ pkgs.testers.runNixOSTest {
         machine.succeed(
             f"test -s /home/omarchy/.local/state/omarchy/current/theme/{generated}")
 
+
+    # ---- Arch package names get nixpkgs answers --------------------------
+    # Every omarchy-install-* script routes through omarchy-pkg-add, so this is
+    # the one place that decides whether an Install row is useful or a dead
+    # end. Asserted in a real session rather than by running the binary on a
+    # workstation: what matters is that the table and fontconfig are reachable
+    # from where the menu actually calls it.
+    advice = machine.succeed(user % "omarchy-pkg-add ttf-firacode-nerd 2>&1 || true")
+    print(advice)
+    assert "nerd-fonts.fira-code" in advice, "font not mapped to nixpkgs"
+    assert "fonts.packages" in advice, (
+        "a font in environment.systemPackages installs and is still not found "
+        "by fontconfig, so the advice has to name the right option")
+
+    # The app half of the table is generated from data/apps.nix.
+    advice = machine.succeed(user % "omarchy-pkg-add php 2>&1 || true")
+    assert "nixarchy-app-enable php" in advice, f"php not answered as an app: {advice}"
+
+    # PHP extensions are not packages to add beside PHP.
+    advice = machine.succeed(user % "omarchy-pkg-add xdebug 2>&1 || true")
+    assert "withExtensions" in advice, f"xdebug not answered as an extension: {advice}"
+
+    # And a name nothing maps still gets the generic answer rather than a
+    # traceback.
+    advice = machine.succeed(
+        user % "omarchy-pkg-add some-unmapped-thing 2>&1 || true")
+    assert "search.nixos.org" in advice, advice
+
+    # ---- switching to a font that is already installed --------------------
+    # Upstream's row is `omarchy-pkg-add <pkg> && omarchy-font-set '<family>'`,
+    # so the switch never ran here even when the font was present. This module
+    # installs JetBrainsMono Nerd Font, so the positive branch is real.
+    out = machine.succeed(
+        user % ("omarchy-install-font \"JetBrains Mono\" ttf-jetbrains-mono-nerd "
+                "\"JetBrainsMono Nerd Font\" 2>&1 || true"))
+    print(out)
+    assert "already installed" in out, (
+        "a font this system ships was reported missing -- fc-list is either "
+        "not on PATH or the check is losing to SIGPIPE under pipefail")
+
+    # ---- the doctor ------------------------------------------------------
+    # `nix run .#doctor` is the first thing the README tells anyone to run, so
+    # it is worth more than having been run once by hand on a workstation. This
+    # VM is a known machine -- SDDM greeting, Hyprland configured, Omarchy's own
+    # config seeded -- so its answers are checkable.
+    # As the user, not root: it reads $HOME, and run as root it reported "No
+    # Hyprland config" on a machine whose config was sitting in /home/omarchy.
+    report = machine.succeed(
+        user % "${doctor}/bin/nixarchy-doctor 2>&1 || true")
+    print(report)
+
+    # It must never write anything: it runs on a machine that has not decided
+    # to adopt nixarchy yet.
+    assert "SDDM is greeting" in report, report
+    assert "Hyprland already configured" in report, report
+
+    # And it has to end with something to paste, not just a diagnosis.
+    assert "programs.nixarchy.enable = true;" in report, report
+
+    # A machine already greeting with SDDM does not need displayManager=false;
+    # advising it would be wrong.
+    assert "displayManager = false" not in report, (
+        "the doctor told an SDDM machine to turn SDDM off")
 
     # ---- the Omarchy session entry ---------------------------------------
     # What lets nixarchy sit beside an existing Hyprland: a session of its own

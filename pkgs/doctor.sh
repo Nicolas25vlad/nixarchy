@@ -42,9 +42,21 @@ say ""
 # that ties instead of yielding. Anyone who already sets it therefore collides.
 say "${bold}Compositor${off}"
 if [ -e "$sessions/hyprland.desktop" ]; then
+  # No `... | grep | head` here. writeShellApplication runs this under
+  # `set -euo pipefail`, and `head -1` exiting first sends SIGPIPE up the
+  # pipeline, which pipefail turns into a failure and errexit turns into a
+  # dead script -- this one stopped after printing "Compositor". It survived
+  # by luck on a workstation where grep finished before head closed the pipe.
   hypr_bin=$(sed -n 's/^Exec=//p' "$sessions/hyprland.desktop" | awk '{print $1}')
-  hypr_ver=$("${hypr_bin%/*}/Hyprland" --version 2>/dev/null |
-    grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  # Read from the store path rather than by running the binary: Hyprland
+  # --version wants more of a session than this has, and answered "unknown
+  # version" on a machine whose Hyprland was plainly installed. The path
+  # carries it: /nix/store/...-hyprland-0.56.0+date=...
+  hypr_ver=$(
+    awk 'match($0, /hyprland-[0-9]+\.[0-9]+\.[0-9]+/) {
+           print substr($0, RSTART + 9, RLENGTH - 9); exit
+         }' <<<"$hypr_bin"
+  )
   finding "Hyprland already configured" "$warn" "(${hypr_ver:-unknown version})"
   say "     nixarchy pins its own Hyprland and does not defer, so this collides."
   snippet+=(
@@ -65,14 +77,34 @@ say ""
 
 # ---- the greeter ---------------------------------------------------------
 say "${bold}Display manager${off}"
+# NixOS puts sddm, gdm, lightdm and ly behind one display-manager.service and
+# names the actual greeter only in its ExecStart -- so asking for sddm.service
+# told a machine running SDDM that it had no display manager at all. greetd
+# does get a unit of its own.
 found_dm=""
-for dm in gdm sddm lightdm greetd ly; do
-  if systemctl is-enabled "$dm.service" >/dev/null 2>&1 ||
-    systemctl is-active "$dm.service" >/dev/null 2>&1; then
-    found_dm=$dm
-    break
-  fi
-done
+# is-active as well as is-enabled: a NixOS display-manager.service can report
+# "static", which is not an enabled state, and asking only is-enabled reported
+# "No display manager" on a machine that was greeting through SDDM right then.
+dm_on() { systemctl is-enabled "$1" >/dev/null 2>&1 || systemctl is-active "$1" >/dev/null 2>&1; }
+
+if dm_on greetd.service; then
+  found_dm=greetd
+elif dm_on display-manager.service; then
+  # The whole unit, not just ExecStart: NixOS wraps the greeter, so the name
+  # can be in an Environment= or a script path rather than the exec line, and
+  # matching only ExecStart left this reporting "a display manager" on a
+  # machine plainly running SDDM.
+  exec_line=$(systemctl cat display-manager.service 2>/dev/null || true)
+  for dm in sddm gdm lightdm ly; do
+    case "$exec_line" in
+      *"$dm"*)
+        found_dm=$dm
+        break
+        ;;
+    esac
+  done
+  [ -n "$found_dm" ] || found_dm="a display manager"
+fi
 if [ -n "$found_dm" ] && [ "$found_dm" != sddm ]; then
   finding "$found_dm is greeting" "$warn" ""
   say "     Two display managers is not a working configuration."

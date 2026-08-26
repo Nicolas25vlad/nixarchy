@@ -46,8 +46,22 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.omarchy;
-      defaultText = lib.literalExpression "nixarchy.packages.\${system}.omarchy";
+      # Built from *your* nixpkgs through this flake's overlay, not from
+      # inputs.self.packages -- which is built from nixarchy's own nixpkgs.
+      #
+      # Those look identical and are not: every one of the ~80 runtime
+      # dependencies would come from a different nixpkgs instance than the
+      # rest of your system, and the first one you also install yourself makes
+      # buildEnv refuse the profile --
+      #
+      #   two given paths contain a conflicting subpath:
+      #     .../tesseract-5.5.3/bin/tesseract and .../tesseract-5.5.3/bin/tesseract
+      #
+      # -- two builds of the same version, which reads like a bug in nix until
+      # you notice the hashes differ. Found by building a real config that had
+      # tesseract of its own.
+      default = (pkgs.extend inputs.self.overlays.default).omarchy;
+      defaultText = lib.literalExpression "pkgs.extend nixarchy.overlays.default).omarchy";
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 

@@ -1,5 +1,9 @@
 inputs:
 {
+  # Declared with a default: home-manager only passes osConfig when it is used
+  # as a NixOS module, and referencing an undefined argument would break every
+  # standalone configuration.
+  osConfig ? null,
   config,
   lib,
   pkgs,
@@ -15,8 +19,14 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.omarchy;
-      defaultText = lib.literalExpression "nixarchy.packages.\${system}.omarchy";
+      # From *your* nixpkgs through this flake's overlay, for the same reason
+      # the NixOS module does it: inputs.self.packages is built from
+      # nixarchy's own nixpkgs, so its ~80 runtime dependencies are a second
+      # copy of packages you may already have. home.packages is exactly where
+      # that surfaces -- buildEnv refuses a profile holding two builds of the
+      # same tesseract, and says so in a way that looks like a nix bug.
+      default = (pkgs.extend inputs.self.overlays.default).omarchy;
+      defaultText = lib.literalExpression "(pkgs.extend nixarchy.overlays.default).omarchy";
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 
@@ -64,7 +74,19 @@ in
       '';
 
     home = {
-      packages = [ cfg.package ] ++ cfg.package.passthru.runtimeDeps;
+      # The runtime dependencies go in only when the NixOS module is not
+      # already providing them. Listing them in both places is not merely
+      # redundant, it is what turns a package you have overridden into a
+      # broken rebuild: home.packages and environment.systemPackages are
+      # different profiles, and buildEnv refuses a profile holding two builds
+      # of the same program. A config carrying its own
+      # `pkgs.tesseract.override { ... }` collided with the stock one here,
+      # and said so as "two given paths contain a conflicting subpath" naming
+      # the same version twice.
+      packages = [
+        cfg.package
+      ]
+      ++ lib.optionals (!(osConfig.programs.nixarchy.enable or false)) cfg.package.passthru.runtimeDeps;
 
       sessionVariables.OMARCHY_PATH = omarchyPath;
 
