@@ -141,6 +141,22 @@
         default = self.packages.${system}.omarchy;
         inherit (pkgsFor.${system}) omarchy;
 
+        # `nix run github:olafkfreund/nixarchy#doctor` -- reads the running
+        # system and prints the configuration it would need. Runnable before
+        # nixarchy is an input anywhere, which is the only entry point someone
+        # deciding whether to adopt it actually has.
+        doctor = pkgsFor.${system}.writeShellApplication {
+          name = "nixarchy-doctor";
+          runtimeInputs = with pkgsFor.${system}; [
+            systemd
+            gnused
+            gnugrep
+            gawk
+            coreutils
+          ];
+          text = builtins.readFile ./pkgs/doctor.sh;
+        };
+
         # A screencast of a real session, plus the frames it was made from.
         # Not a check: it boots a desktop, drives a tour of it and encodes a
         # video, which is minutes of work nobody wants on every push. Build it
@@ -215,6 +231,13 @@
           inherit inputs;
           pkgs = pkgsFor.${system};
         };
+        # Boots the Omarchy session on a machine whose hyprland.lua belongs to
+        # somebody else -- the case the session entry exists for.
+        coexist = import ./tests/coexist.nix {
+          inherit inputs;
+          pkgs = pkgsFor.${system};
+        };
+
         vm-toplevel = self.nixosConfigurations.vm.config.system.build.toplevel;
       });
     };

@@ -212,6 +212,71 @@ any conflict to warn you.
 
 ## Adding it to a machine you already run
 
+Start here:
+
+```sh
+nix run github:olafkfreund/nixarchy#doctor
+```
+
+It reads the running system and prints the configuration that machine needs --
+before nixarchy is an input anywhere. It changes nothing.
+
+Then, in order:
+
+1. **Add the input**, and import the NixOS module.
+
+   ```nix
+   inputs.nixarchy.url = "github:olafkfreund/nixarchy";
+   # in your host's modules:
+   imports = [ inputs.nixarchy.nixosModules.nixarchy ];
+   programs.nixarchy.enable = true;
+   ```
+
+2. **Paste what the doctor printed.** On a machine that already runs Hyprland
+   behind greetd, that is:
+
+   ```nix
+   programs.nixarchy.displayManager = false;                        # keep your greeter
+   programs.hyprland.package = lib.mkForce pkgs.hyprland;           # keep your Hyprland
+   programs.hyprland.portalPackage = lib.mkForce pkgs.xdg-desktop-portal-hyprland;
+   ```
+
+3. **Import the Home Manager module** for the user who will run the desktop.
+   Without it there is no app selection, no theme state and no seeded config.
+
+   ```nix
+   home-manager.users.you = {
+     imports = [ inputs.nixarchy.homeManagerModules.nixarchy ];
+     programs.nixarchy.enable = true;
+   };
+   ```
+
+4. **Rebuild.** `nixos-rebuild switch` will tell you about anything the doctor
+   missed: every remaining conflict is an evaluation failure, not a broken
+   machine.
+
+5. **Log out and pick "Omarchy"** at your greeter. If you already have a
+   Hyprland config, this is the step that matters -- see below.
+
+### If you already have a `~/.config/hypr/hyprland.lua`
+
+Nixarchy never overwrites a file you own, so Omarchy's own `hyprland.lua` is
+not installed and nothing in `~/.config/hypr` starts its bar or binds its keys.
+
+The **Omarchy** session is the answer, and it is registered by default. It runs
+Hyprland against Omarchy's own config with `--config`, so it needs no file of
+yours: your session stays yours, and Omarchy's is Omarchy's. `nix build
+.#checks.x86_64-linux.coexist` boots exactly that arrangement -- a foreign
+`hyprland.lua` in place, the Omarchy session launched from its own `.desktop`,
+and the desktop asserted to render.
+
+The two sessions share
+`~/.config/hypr/{monitors,input,bindings,looknfeel,autostart}.lua`, because
+Omarchy's bootstrap builds Hyprland's Lua module path from `$HOME/.config` and
+nothing else. Only the entry point differs, so editing those changes both.
+
+### What defers to you automatically
+
 Every system service the module turns on is `mkDefault`, so your own settings
 win rather than colliding. If you already run Docker your way, or
 systemd-networkd instead of NetworkManager, or Plymouth off, nothing here
