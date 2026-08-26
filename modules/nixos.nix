@@ -144,7 +144,32 @@ in
 
       # Omarchy's scripts are unwrapped by design (wrapping breaks the CLI's
       # metadata scan), so their dependencies have to be on the session PATH.
-      systemPackages = [ cfg.package ] ++ cfg.package.passthru.runtimeDeps;
+      systemPackages = [
+        cfg.package
+      ]
+      ++ cfg.package.passthru.runtimeDeps
+      ++ (with pkgs; [
+        # omarchy-theme-set-gnome applies the light/dark half of every theme
+        # with `gsettings set org.gnome.desktop.interface`, and on Arch the
+        # schemas it writes arrive as transitive dependencies. Nothing pulls
+        # them into a NixOS system profile, so gsettings answered "No schemas
+        # installed" and every one of those writes was a no-op -- which is why
+        # a dark theme left GTK apps and Chromium in light mode.
+        glib
+        gsettings-desktop-schemas
+
+        # install/omarchy-base.packages:46. GTK 3 has no Adwaita-dark of its
+        # own; gnome-themes-extra is the package that supplies it, and it is
+        # the exact name gsettings gets set to.
+        gnome-themes-extra
+
+        # install/omarchy-base.packages:147. Every theme's icons.theme names a
+        # Yaru variant -- Yaru-magenta, Yaru-sage, Yaru-olive and so on -- so
+        # without this the icon theme is set to something that does not exist.
+        yaru-theme
+        # Yaru inherits from Adwaita for anything it does not draw itself.
+        adwaita-icon-theme
+      ]);
     };
 
     # install/config/*.sh and install/config/enable-services.sh, expressed as
@@ -189,6 +214,17 @@ in
       # never switches to power-saver.
       upower.enable = true;
     };
+
+    # glib looks for compiled schemas in $XDG_DATA_DIRS/glib-2.0/schemas, but
+    # nixpkgs' glib setup hook relocates them to
+    # share/gsettings-schemas/<name>/glib-2.0/schemas so that two packages
+    # shipping schemas cannot collide -- and environment.pathsToLink does not
+    # carry that path into the system profile at all. Installing the package is
+    # therefore not enough to make it readable: without this, gsettings answers
+    # "No schemas installed" and omarchy-theme-set-gnome writes nothing.
+    environment.sessionVariables.XDG_DATA_DIRS = [
+      "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}"
+    ];
 
     # install/config/docker.sh
     virtualisation.docker.enable = true;

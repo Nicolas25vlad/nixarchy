@@ -89,6 +89,36 @@ in
       '';
     };
 
+    # The first-run theme above is applied headless, which by design skips every
+    # post-theme command -- including omarchy-theme-set-gnome, the one that
+    # tells GTK and the settings portal whether this theme is light or dark.
+    # Upstream never notices: on Arch that command runs during install with a
+    # live session, and dconf keeps the answer forever after. Here the first
+    # session would come up dark-themed with light GTK apps until the user
+    # switched themes by hand.
+    #
+    # Unlike the shell below, this needs only the session bus, not a running
+    # compositor, so a graphical-session unit is the right shape for it. It is
+    # a no-op on every later login, because it writes what dconf already holds.
+    systemd.user.services.omarchy-theme-gnome = {
+      Unit = {
+        Description = "Apply the current Omarchy theme's light/dark mode to GTK";
+        After = [ "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        # omarchy-theme-set-gnome shells out to omarchy-theme-color and
+        # gsettings, and a user unit does not inherit the login PATH.
+        Environment = [
+          "PATH=${cfg.package}/bin:${pkgs.glib}/bin:${pkgs.coreutils}/bin"
+          "OMARCHY_PATH=${omarchyPath}"
+        ];
+        ExecStart = "${cfg.package}/bin/omarchy-theme-set-gnome";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
     # No systemd unit for the shell. Upstream starts it from Hyprland itself:
     #
     #   default/hypr/autostart.lua

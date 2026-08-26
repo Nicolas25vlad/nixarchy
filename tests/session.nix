@@ -154,6 +154,58 @@ pkgs.testers.runNixOSTest {
     # be checked on hardware.
     machine.succeed("powerprofilesctl get")
 
+    # ---- theme reaches GTK ----------------------------------------------
+    # The default theme is dark. Everything below is what carries that fact out
+    # of Omarchy's own state and into apps it does not own, and every step of it
+    # was silently broken: the schemas gsettings writes are installed but were
+    # not on XDG_DATA_DIRS, so `gsettings set` was a no-op and a dark desktop
+    # came up with light GTK apps and a light Chromium.
+    #
+    # Nothing is run by hand here on purpose -- login alone must be enough.
+    user = ("su omarchy -c 'export XDG_RUNTIME_DIR=/run/user/1000 "
+            "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; %s'")
+
+    mode = machine.succeed(
+        user % "omarchy-theme-color --file "
+               "$HOME/.local/state/omarchy/current/theme/colors.toml mode").strip()
+    assert mode == "dark", f"the default theme is not dark any more (got {mode!r})"
+
+    machine.wait_until_succeeds(
+        user % "gsettings get org.gnome.desktop.interface color-scheme"
+               " | grep -q prefer-dark")
+
+    scheme = machine.succeed(
+        user % "gsettings get org.gnome.desktop.interface color-scheme").strip()
+    gtk = machine.succeed(
+        user % "gsettings get org.gnome.desktop.interface gtk-theme").strip()
+    icons = machine.succeed(
+        user % "gsettings get org.gnome.desktop.interface icon-theme").strip()
+    print(f"color-scheme {scheme} / gtk-theme {gtk} / icon-theme {icons}")
+
+    # "No schemas installed" is what this returned before gsettings-desktop-schemas
+    # was reachable, and gsettings exits 0 while saying it.
+    assert "prefer-dark" in scheme, f"GTK was not told the theme is dark: {scheme}"
+
+    # Adwaita-dark is not built into GTK 3; it comes from gnome-themes-extra.
+    assert "Adwaita-dark" in gtk, f"gtk-theme is {gtk}"
+    machine.succeed("test -d /run/current-system/sw/share/themes/Adwaita-dark")
+
+    # Every theme names a Yaru variant, so the name must resolve to a real dir.
+    theme_name = icons.strip("'")
+    machine.succeed(f"test -d /run/current-system/sw/share/icons/{theme_name}")
+
+    # What Chromium actually reads for BrowserColorScheme "device": 1 is
+    # prefer-dark, and 0 -- "no preference" -- is what it read before, which
+    # Chromium renders as light.
+    portal = machine.succeed(
+        user % ("busctl --user call org.freedesktop.portal.Desktop "
+                "/org/freedesktop/portal/desktop org.freedesktop.portal.Settings "
+                "ReadOne ss org.freedesktop.appearance color-scheme")).strip()
+    print(f"portal color-scheme -> {portal}")
+    assert portal == "v u 1", (
+        f"the settings portal reports {portal!r}, not dark; Chromium and every "
+        "other portal-reading app will come up light.")
+
     # ---- does the wallpaper actually render? ----------------------------
     # Everything else here proves the tree assembles. This proves the desktop
     # is not black -- which every other check passed while it was.

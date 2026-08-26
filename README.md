@@ -420,6 +420,10 @@ Known gaps:
 - RetroArch's default core set is free-licensed only, so snes9x, genesis-plus-gx,
   mame and dolphin need `allowUnfree` and a `withCores` override
 - the shell rc chain is bash only, as upstream is; zsh and fish get nothing
+- Chromium's theme *accent* is not applied: omarchy-theme-set-browser writes
+  `/etc/chromium/policies/managed/color.json` as the user, which NixOS's
+  store-managed `/etc` has no place for. Light/dark is unaffected -- that
+  travels through the settings portal, not the policy file
 - Bluetooth's DBus object manager fails in the VM
 
 ## License
