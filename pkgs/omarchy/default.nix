@@ -399,6 +399,39 @@ stdenvNoCC.mkDerivation {
     substituteInPlace $out/share/omarchy/bin/omarchy-games-retro-cores \
       --replace-fail '@info@' '${libretro-core-info}/share/retroarch/cores'
 
+    # The desktop entries, which were not installed at all: without them the
+    # shipped web apps -- HEY, Basecamp, WhatsApp, X, YouTube, Zoom, Discord,
+    # the Google ones -- and the Docker and Disk Usage launchers are simply
+    # absent from the launcher, and `omarchy webapp` can only add new ones.
+    install -d $out/share/applications $out/share/icons/hicolor/256x256/apps
+    install -m644 ${src}/applications/*.desktop $out/share/applications/
+
+    # Each Icon= key is the file's basename lowercased with runs of non
+    # alphanumerics collapsed to a dash -- safe_icon_name() in
+    # omarchy-webapp-install, which is what names icons for web apps the user
+    # adds later. Same rule here so both kinds resolve the same way.
+    for icon in ${src}/applications/icons/*.png; do
+      base=$(basename "$icon" .png)
+      name=$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]' \
+        | sed 's/[^[:alnum:]]\+/-/g; s/^-//; s/-$//')
+      install -m644 "$icon" \
+        "$out/share/icons/hicolor/256x256/apps/$name.png"
+    done
+
+    # Every Icon= must resolve, or the entry shows up in the launcher as a
+    # blank tile. This is the drift guard: an upstream release that adds a
+    # desktop file, or renames an icon, fails here rather than shipping.
+    for desktop in $out/share/applications/*.desktop; do
+      icon=$(sed -n 's/^Icon=//p' "$desktop")
+      [ -n "$icon" ] || continue
+      # foot, imv and mpv name icons their own packages ship.
+      case "$icon" in foot | imv | mpv) continue ;; esac
+      if [ ! -e "$out/share/icons/hicolor/256x256/apps/$icon.png" ]; then
+        echo "$(basename "$desktop") wants icon '$icon', which is not installed" >&2
+        exit 1
+      fi
+    done
+
     # Wear the snowflake.
     substitute ${./menu-bar-widget.qml} \
       $out/share/omarchy/shell/plugins/menu/BarWidget.qml \
