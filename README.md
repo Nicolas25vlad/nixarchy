@@ -526,10 +526,42 @@ checks the file still parses, checks a repeated pick is a no-op, and checks
 
 ## Status
 
-Working: the session, the bar, themes, the CLI, the Install, Remove and Update
-menus, and the app selection loop end to end.
+Working, and each line names what proves it rather than asserting it. Every
+one of these runs in CI on each push.
 
-Known gaps:
+| | proven by |
+| --- | --- |
+| The session, bar, themes and wallpaper | `checks.session` logs in through SDDM's greeter and asserts the desktop *renders* -- it compares the screen against the wallpaper, because every other check passed once while it was black |
+| Adding it to a machine you already run | `checks.integration` **builds** the module onto a config that overrides a package Omarchy also uses, pins its own Hyprland and already greets with greetd |
+| Sitting beside an existing Hyprland | `checks.coexist` boots the Omarchy session with a foreign `hyprland.lua` in place and asserts the bar comes up anyway |
+| The CLI | `omarchy commands --check`, plus a count the build refuses to let drift |
+| The Install/Remove/Update menus | `checks.session` enables an app, applies it, and asserts the selection reached the flake |
+| The shell chain in bash, zsh and fish | asserted by running each shell and calling the functions, not by checking a file exists |
+| Compose keys, Bluetooth, UPower, the browser accent | asserted on the thing itself: the include resolves, the unit is enabled, the portal answers, the colour is the theme's |
+
+The integration check exists because everything else starts from a clean
+machine. Three bugs shipped that only appear when the module is *built* onto a
+config that already exists -- a desktop file colliding with a real package, two
+nixpkgs instances, and runtime dependencies listed in two profiles at once.
+None of them is an evaluation error, so none of them was caught by anything
+that only evaluates.
+
+### What is left
+
+Nothing on the list below is waiting on a decision -- each is either
+impossible, or a tradeoff taken deliberately. In rough order of how much
+someone would miss it:
+
+1. **Upstream is pinned to one Omarchy release.** The drift guards are built
+   for a bump -- `--replace-fail` on every patched line, a menu cross-check, an
+   icon check, an app-count check -- but no one has actually taken one yet.
+   That is the next real piece of work.
+2. **fish's `ga` and `gd`** cannot change your directory, and never will: they
+   run as upstream's bash behind a wrapper.
+3. **Battle.net and GeForce NOW** need a hand each, named in their rows. The
+   wine prefixes and Flatpaks behind them are not this repo's to own.
+
+Known gaps in detail:
 
 - `brave-origin` has no published source; use `apps.brave` with policies in
   `/etc/brave/policies/managed`
