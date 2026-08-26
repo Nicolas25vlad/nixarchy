@@ -24,12 +24,7 @@ let
   system = pkgs.stdenv.hostPlatform.system;
 
   existing =
-    {
-      config,
-      lib,
-      pkgs,
-      ...
-    }:
+    { lib, pkgs, ... }:
     {
       # A package nixarchy also pulls in, built differently. Same version,
       # different derivation -- exactly what `pkgs.tesseract.override { ... }`
