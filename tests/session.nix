@@ -28,31 +28,29 @@ pkgs.testers.runNixOSTest {
       flake = "/etc/nixos";
     };
 
-    # Start the session the way a real login does. An earlier version ran
-    # Hyprland under `su`, which has no logind session and therefore no seat,
-    # and aquamarine died with `CBackend::create() failed!` -- a property of
-    # the harness, not of the thing under test. Autologin on tty1 gives a
-    # genuine seat.
-    services.getty.autologinUser = "omarchy";
+    # Log in the way a user actually does: through SDDM's greeter. An earlier
+    # version autologged in on tty1 and launched Hyprland from the login
+    # shell, which exercised the compositor but skipped the greeter entirely
+    # -- so SDDM being enabled by this module was never tested at all, and
+    # neither was the session file it launches.
+    #
+    # (Running Hyprland under `su` was tried before that and is worse: no
+    # logind session means no seat, and aquamarine dies with
+    # `CBackend::create() failed!`. SDDM gives a genuine seat.)
 
     # plymouth-quit-wait never finishes without a display and blocks the boot.
     boot.plymouth.enable = pkgs.lib.mkForce false;
-    services.displayManager.sddm.enable = pkgs.lib.mkForce false;
+
+    # No GPU in the VM, and Hyprland refuses a software renderer unless told.
+    # This has to be system-wide now: SDDM starts the session, not a login
+    # shell this test controls.
+    environment.sessionVariables.WLR_RENDERER_ALLOW_SOFTWARE = "1";
 
     # No extra GPU device. qemu-vm already gives the machine a display, and
     # machine.screenshot() dumps *that* one -- adding a second sent Hyprland
     # to the new device while the screenshot kept reading the original, which
     # came back pure black and made the wallpaper check fail on a machine
     # whose desktop was fine.
-
-    # Launch Hyprland from the autologin shell, which is where the seat is.
-    programs.bash.loginShellInit = ''
-      if [ "$(tty)" = "/dev/tty1" ]; then
-        export WLR_RENDERER_ALLOW_SOFTWARE=1
-        export XDG_RUNTIME_DIR=/run/user/$(id -u)
-        Hyprland > /tmp/hyprland.log 2>&1
-      fi
-    '';
 
     home-manager = {
       useGlobalPkgs = true;
@@ -86,6 +84,10 @@ pkgs.testers.runNixOSTest {
     '';
   };
 
+  # Reading the greeter means reading pixels: SDDM's Qt greeter puts nothing
+  # on a console or in a file that says it is ready for a password.
+  enableOCR = true;
+
   testScript = ''
     import os
     machine.wait_for_unit("multi-user.target")
@@ -115,8 +117,39 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -q 'brave.enable' /etc/nixos/nixarchy-apps.nix")
     print("selection reached /etc/nixos/nixarchy-apps.nix")
 
+    # ---- the greeter ---------------------------------------------------
+    machine.wait_for_unit("display-manager.service")
+
+    # OCR rather than a unit or a file: what is being asserted is that a human
+    # is actually being offered a login, which only the pixels can say.
+    # logind knows when the greeter has a seat; OCR does not, and matching on
+    # greeter text raced -- wait_for_text returned on a frame the greeter was
+    # still painting, the keystrokes went nowhere, and the login never
+    # happened.
+    machine.wait_until_succeeds("loginctl list-sessions | grep -q greeter")
+
+    # The QML still needs a moment after the session exists before the
+    # password field takes input.
+    machine.sleep(8)
+    machine.screenshot("greeter")
+
+    # A blank greeter would still accept the password and log in, so assert
+    # something was actually drawn. This theme OCRs badly -- a few characters
+    # is all that comes back -- so the check is "not blank", not the wording.
+    drawn = machine.get_screen_text().strip()
+    print(f"greeter OCR: {drawn!r}")
+    assert drawn, "the greeter drew nothing; a user would see a blank screen"
+
+    # The only user is preselected and the password field has focus.
+    machine.send_chars("omarchy\n")
+
+    # The dialog accepting the password is the thing under test; the session
+    # starting is the consequence.
+    machine.wait_until_succeeds(
+        "journalctl -b -u display-manager --no-pager"
+        " | grep -q 'Authentication for user .*omarchy.* successful'")
+
     # ---- session -------------------------------------------------------
-    # Autologin on tty1 starts Hyprland from a real seat.
     machine.wait_for_unit("user@1000.service")
 
     # Long enough for omarchy-launch-shell to exhaust its supervision budget:
@@ -124,7 +157,7 @@ pkgs.testers.runNixOSTest {
     machine.sleep(75)
 
     print("=========== hyprland ===========")
-    print(machine.succeed("cat /tmp/hyprland.log || true"))
+    print(machine.succeed("journalctl -b _UID=1000 -t Hyprland --no-pager || true"))
 
     print("=========== omarchy-shell ===========")
     print(machine.succeed("journalctl -b -t omarchy-shell --no-pager || true"))

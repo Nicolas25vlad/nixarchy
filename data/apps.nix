@@ -372,4 +372,26 @@
     ours = true;
     arch = "once-bin";
   };
+
+  # ── Preinstalls ─────────────────────────────────────────────────────────
+  # Upstream ships these installed and offers Remove > Preinstalls to take
+  # them away; programs.nixarchy.preinstalls is the declarative form of that
+  # and covers the rest of the group. Obsidian cannot travel with it: an
+  # unfree package in the always-on set aborts the entire rebuild rather than
+  # failing on its own, so it is opt-in here instead.
+  # No menuId: upstream has no per-app Install row for a preinstall either,
+  # and inventing one would put a row in the menu that Omarchy does not have.
+  # It reaches users through the app-selection template instead.
+  obsidian = {
+    label = "Obsidian";
+    category = "Preinstalls";
+    attr = "obsidian";
+    unfree = true;
+    arch = "obsidian";
+    note = ''
+      Preinstalled upstream, opt-in here because it is unfree. Theme syncing
+      needs the Omarchy theme selected under Appearance > Themes in the app;
+      omarchy-theme-set-obsidian writes it on every theme change.
+    '';
+  };
 }

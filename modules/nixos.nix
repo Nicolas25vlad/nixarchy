@@ -24,6 +24,24 @@ in
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 
+    preinstalls = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Install the desktop applications Omarchy ships preinstalled -- the set
+        omarchy-install-preinstalls restores and Remove > Preinstalls takes
+        away. Upstream has these on a fresh machine, so they are on here too.
+
+        Six of upstream's thirteen cannot be here: obsidian is unfree, so it
+        would abort the whole rebuild rather than fail on its own -- enable
+        `apps.obsidian` for it instead -- and aether, cliamp, omacut, omacalc
+        and omawrite are Omarchy's own applications, not packaged in nixpkgs.
+        lazydocker is already a runtime dependency.
+
+        Turning this off is the declarative Remove > Preinstalls.
+      '';
+    };
+
     bashIntegration = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -176,7 +194,25 @@ in
         # because those ship a single cursor each, and the point is to follow
         # the theme: Ice is white for dark themes, Classic black for light.
         bibata-cursors
-      ]);
+      ])
+      ++ lib.optionals cfg.preinstalls (
+        with pkgs;
+        [
+          # omarchy-install-preinstalls, minus the six that cannot be here.
+          pinta
+          libreoffice
+          xournalpp
+          obs-studio
+          moonlight-qt
+          kdePackages.kdenlive
+
+          # install/omarchy-base.packages. The GUIs manual sends people to
+          # Disks for formatting and SMART, and sushi is what makes Space
+          # preview a file in Nautilus without opening it.
+          gnome-disk-utility
+          sushi
+        ]
+      );
     };
 
     # install/config/*.sh and install/config/enable-services.sh, expressed as
