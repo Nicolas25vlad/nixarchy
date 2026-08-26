@@ -92,6 +92,8 @@
   libretro-core-info,
   localsend,
   runCommand,
+  writeText,
+  fontconfig,
   tldr,
   inxi,
   ffmpegthumbnailer,
@@ -114,6 +116,9 @@ let
     bash
     coreutils
     util-linux
+    # omarchy-install-font asks it whether a family is installed before
+    # deciding between switching to it and explaining how to add it
+    fontconfig
     findutils
     gnused
     gnugrep
@@ -224,6 +229,20 @@ let
     satty # screenshot annotation
     wl-screenrec # screen recording
   ];
+  # arch-name<TAB>kind<TAB>attr<TAB>note, one per line. Apps come from
+  # data/apps.nix so the two cannot drift; everything the menu does not select
+  # -- fonts, the packages omarchy-install-dev-env adds behind a language --
+  # comes from data/arch-extras.nix.
+  archTable =
+    let
+      apps = import ../../data/apps.nix;
+      extras = import ../../data/arch-extras.nix;
+      appRows = lib.mapAttrsToList (name: app: "${app.arch}\tapp\t${name}\t") (
+        lib.filterAttrs (_: a: a ? arch) apps
+      );
+      extraRows = lib.mapAttrsToList (arch: e: "${arch}\t${e.kind}\t${e.attr}\t${e.note or ""}") extras;
+    in
+    writeText "nixarchy-arch-packages.tsv" (lib.concatStringsSep "\n" (appRows ++ extraRows) + "\n");
 in
 stdenvNoCC.mkDerivation {
   pname = "omarchy";
@@ -403,6 +422,15 @@ stdenvNoCC.mkDerivation {
       # yet unreachable to the scripts that call it.
       [ -e "$out/bin/$name" ] || ln -s "$target" "$out/bin/$name"
     done
+
+    # The Arch-name lookup omarchy-pkg-add answers with. Generated rather than
+    # hand-written into the script: data/apps.nix already maps every Install
+    # row that names a package and CI holds it to that, so deriving from it
+    # means a newly mapped app is answered without touching this script.
+    install -Dm644 ${archTable} $out/share/omarchy/nixarchy-arch-packages.tsv
+    substituteInPlace $out/share/omarchy/bin/omarchy-pkg-add \
+      --replace-fail '@table@' \
+        "$out/share/omarchy/nixarchy-arch-packages.tsv"
 
     substituteInPlace $out/share/omarchy/bin/omarchy-games-retro-cores \
       --replace-fail '@info@' '${libretro-core-info}/share/retroarch/cores'

@@ -13,17 +13,77 @@
 # rebuild. Point at the declarative route instead, and fail, so a caller that
 # goes on to configure what it thinks it just installed stops here rather than
 # half-completing.
+#
+# The table is generated at build time from data/apps.nix and
+# data/arch-extras.nix, so an Arch name this knows about is answered with the
+# nixpkgs name rather than a link to search for it. That is the difference
+# between "Install > Style > Font > Fira Code" doing nothing useful and telling
+# you the one line that makes it work.
 set -euo pipefail
 
+table=@table@
 file="${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy/apps.nix"
 
+known=0
+unknown=()
+
 echo
-echo "Cannot install [$*] here: packages are declared, not installed."
-echo
-echo "If Omarchy's Install menu offers it, pick it there -- that uncomments a"
-echo "line in $file, and Apply changes rebuilds with it."
-echo
-echo "Otherwise add it to your own configuration as environment.systemPackages"
-echo "and rebuild. Search for it first:"
-echo "  https://search.nixos.org/packages"
+
+for pkg in "$@"; do
+  entry=$(grep -m1 -E "^${pkg}	" "$table" 2>/dev/null || true)
+  if [ -z "$entry" ]; then
+    unknown+=("$pkg")
+    continue
+  fi
+  known=1
+
+  kind=$(printf '%s' "$entry" | cut -f2)
+  attr=$(printf '%s' "$entry" | cut -f3)
+  note=$(printf '%s' "$entry" | cut -f4)
+
+  case "$kind" in
+    app)
+      echo "$pkg is Omarchy's name for an app this repo already maps."
+      echo
+      echo "  nixarchy-app-enable $attr"
+      echo "  nixarchy-apply"
+      ;;
+    font)
+      echo "$pkg is $attr in nixpkgs. Fonts are registered, not just installed,"
+      echo "so environment.systemPackages is not enough:"
+      echo
+      echo "  fonts.packages = [ pkgs.$attr ];"
+      echo
+      echo "Rebuild, then pick the font again -- it sets it once it can find it."
+      ;;
+    php-extension)
+      echo "$pkg is a PHP extension. On NixOS these are built into the"
+      echo "interpreter rather than added beside it:"
+      echo
+      echo "  environment.systemPackages = [ ($attr) ];"
+      ;;
+    *)
+      echo "$pkg is $attr in nixpkgs:"
+      echo
+      echo "  environment.systemPackages = [ pkgs.$attr ];"
+      ;;
+  esac
+  [ -n "$note" ] && echo "  ($note)"
+  echo
+done
+
+if [ ${#unknown[@]} -gt 0 ]; then
+  echo "Cannot install [${unknown[*]}] here: packages are declared, not installed."
+  echo
+  echo "If Omarchy's Install menu offers it, pick it there -- that uncomments a"
+  echo "line in $file, and Apply changes rebuilds with it."
+  echo
+  echo "Otherwise add it to your own configuration as environment.systemPackages"
+  echo "and rebuild. Search for it first:"
+  echo "  https://search.nixos.org/packages"
+  echo
+fi
+
+# Always non-zero: nothing was installed, and a caller that carries on to
+# configure what it thinks it just installed should stop here.
 exit 1

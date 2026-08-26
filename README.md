@@ -536,6 +536,10 @@ Known gaps:
 - RetroArch's default core set is free-licensed only, so snes9x, genesis-plus-gx,
   mame and dolphin need `allowUnfree` and a `withCores` override
 - the shell rc chain is bash only, as upstream is; zsh and fish get nothing
+- Install rows that name an Arch package tell you the nixpkgs name and the
+  option to put it in, rather than installing it. Fonts, the packages
+  `omarchy install dev-env` adds behind a language, and Ollama are all mapped;
+  anything unmapped still gets the generic answer
 - Chromium's theme *accent* is not applied: omarchy-theme-set-browser writes
   `/etc/chromium/policies/managed/color.json` as the user, which NixOS's
   store-managed `/etc` has no place for. Light/dark is unaffected -- that
