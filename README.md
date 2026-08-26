@@ -205,8 +205,34 @@ https://nixarchy.cachix.org   the vendored tree, this flake's own packages,
 https://hyprland.cachix.org   hyprwm's own builds
 ```
 
-`mkForce` them away in `nix.settings` if you would rather trust neither and
-build from source.
+`programs.nixarchy.binaryCaches = false` if you would rather trust neither and
+build from source. This is the one setting worth a deliberate decision:
+substituters are a list, so they merge into whatever you already trust without
+any conflict to warn you.
+
+## Adding it to a machine you already run
+
+Every system service the module turns on is `mkDefault`, so your own settings
+win rather than colliding. If you already run Docker your way, or
+systemd-networkd instead of NetworkManager, or Plymouth off, nothing here
+argues with you.
+
+Two cases are handled rather than merely deferred:
+
+| Your machine | What happens |
+| --- | --- |
+| TLP for power management | power-profiles-daemon is left off; NixOS forbids both. `omarchy powerprofiles` stops working, nothing else does |
+| GDM, LightDM, greetd or ly | SDDM is left off and your greeter launches Omarchy's session from `wayland-sessions`. You lose the branded greeter, not the desktop |
+
+Two are not, because they are not nixarchy's to resolve:
+
+- **PulseAudio.** NixOS enables PipeWire for any graphical session and asserts
+  the two cannot coexist. A plain `programs.hyprland.enable = true` with
+  PulseAudio fails the same way, with no nixarchy in sight.
+- **Hyprland itself.** `programs.hyprland.enable`, its package and `withUWSM`
+  are set outright, not with `mkDefault`. Omarchy is written against Hyprland's
+  Lua API; replacing the compositor means `lib.mkForce`, which is the right
+  amount of friction for that.
 
 ## Try it in a VM
 

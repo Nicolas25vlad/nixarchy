@@ -24,6 +24,21 @@ in
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 
+    binaryCaches = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Add nixarchy.cachix.org and hyprland.cachix.org as substituters.
+        Without them, enabling nixarchy means compiling a compositor.
+
+        This is the one thing here that changes a machine without any chance
+        of a conflict to warn you: substituters and trusted-public-keys are
+        lists, so they merge silently into whatever you already trust. Set
+        this to false if that is not a decision you want made for you --
+        everything still builds, it just builds locally.
+      '';
+    };
+
     preinstalls = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -96,16 +111,19 @@ in
         "flakes"
       ];
 
-      # Without these, enabling nixarchy means compiling a compositor.
       # hyprland.cachix.org covers Hyprland when the pinned commit is one
       # hyprwm built; nixarchy.cachix.org covers it when it is not, plus the
       # vendored Omarchy tree and the packages this flake builds itself.
-      # mkForce them away if you would rather trust neither.
-      substituters = [
+      #
+      # Behind an option rather than mkForce: these are lists, so they merge
+      # into a user's existing trust with no conflict and no warning, which
+      # makes them the only thing in this module that can change a machine
+      # silently. See programs.nixarchy.binaryCaches.
+      substituters = lib.mkIf cfg.binaryCaches [
         "https://nixarchy.cachix.org"
         "https://hyprland.cachix.org"
       ];
-      trusted-public-keys = [
+      trusted-public-keys = lib.mkIf cfg.binaryCaches [
         "nixarchy.cachix.org-1:05JOuIlsQOWY2/5DQMq7JEA1hwlhgvmMWowMfka8mMM="
         "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE="
       ];
@@ -116,6 +134,14 @@ in
     # together.
     programs = {
       hyprland = {
+        # This block is deliberately NOT mkDefault, unlike everything else
+        # here. Omarchy *is* Hyprland, so enabling nixarchy while disabling it
+        # is a contradiction rather than a preference -- and NixOS' own
+        # hyprland module already defines `package` at mkDefault priority, so
+        # matching that priority does not yield to the user, it ties with
+        # nixpkgs and fails with "defined multiple times". Overriding these
+        # means lib.mkForce, which is the honest signal for replacing the
+        # compositor an entire desktop is written against.
         enable = true;
         package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
         portalPackage =
@@ -217,52 +243,84 @@ in
 
     # install/config/*.sh and install/config/enable-services.sh, expressed as
     # options instead of the imperative scripts upstream runs once at install.
+    # Every enable here is mkDefault. Nixarchy is a desktop, but it is a
+    # NixOS module before it is a distribution, and someone adding it to a
+    # machine they already run should not have to fight it: without mkDefault,
+    # a laptop on TLP, a GNOME user on GDM, a podman user, anyone on
+    # systemd-networkd or PulseAudio got an evaluation failure and had to
+    # mkForce their way out one option at a time. Their setting wins now, and
+    # they lose only the feature that depended on it.
     services = {
+      # SDDM only if nothing else is already greeting. A machine that already
+      # has GDM, LightDM, greetd or ly does not want a second display manager
+      # -- NixOS gives it two definitions of displayManager.generic.execCmd
+      # and refuses to build, which is a baffling error to meet when all you
+      # did was add a desktop. The existing greeter launches Omarchy's session
+      # from wayland-sessions perfectly well; only the branded greeter is lost.
+      #
+      # mkDefault on top, so `sddm.enable = true` still forces the issue.
       displayManager.sddm = {
-        enable = true;
-        wayland.enable = true;
+        enable = lib.mkDefault (
+          !(
+            config.services.displayManager.gdm.enable
+            || config.services.displayManager.ly.enable
+            || config.services.xserver.displayManager.lightdm.enable
+            || config.services.greetd.enable
+          )
+        );
+        wayland.enable = lib.mkDefault true;
 
         # etc/sddm.conf.d/10-theme.conf. The theme itself rides in the package
         # at share/sddm/themes/omarchy, and /share/sddm is already one of the
         # paths linked into the system profile, so naming it here is enough.
         # Without this SDDM uses its own stock theme -- a blue gradient with a
         # placeholder avatar -- as the first screen of an Omarchy machine.
-        theme = "omarchy";
+        theme = lib.mkDefault "omarchy";
       };
 
+      # Left at mkDefault true rather than derived from services.pulseaudio:
+      # NixOS' own graphical-desktop.nix already turns PipeWire on for any
+      # graphical session, so deriving `false` here fights nixpkgs instead of
+      # yielding to the user, and conflicts with that definition. A PulseAudio
+      # user hits nixpkgs' assertion with or without nixarchy; that one is not
+      # ours to resolve.
       pipewire = {
-        enable = true;
-        alsa.enable = true;
-        alsa.support32Bit = true;
-        pulse.enable = true;
-        jack.enable = true;
+        enable = lib.mkDefault true;
+        alsa.enable = lib.mkDefault true;
+        alsa.support32Bit = lib.mkDefault true;
+        pulse.enable = lib.mkDefault true;
+        jack.enable = lib.mkDefault true;
       };
 
       # install/config/locate.sh
-      locate.enable = true;
+      locate.enable = lib.mkDefault true;
 
       # cups, cups-browsed, avahi and nss-mdns are all in base.packages
-      printing.enable = true;
+      printing.enable = lib.mkDefault true;
       avahi = {
-        enable = true;
-        nssmdns4 = true;
-        openFirewall = true;
+        enable = lib.mkDefault true;
+        nssmdns4 = lib.mkDefault true;
+        openFirewall = lib.mkDefault true;
       };
 
       # gnome-keyring + libsecret, and the gvfs backends nautilus needs
-      gnome.gnome-keyring.enable = true;
-      gvfs.enable = true;
-      udisks2.enable = true;
+      gnome.gnome-keyring.enable = lib.mkDefault true;
+      gvfs.enable = lib.mkDefault true;
+      udisks2.enable = lib.mkDefault true;
 
-      # power-profiles-daemon is in base.packages
-      power-profiles-daemon.enable = true;
+      # power-profiles-daemon is in base.packages, and NixOS asserts that it
+      # and TLP cannot both be on. Same reasoning as pipewire above: a laptop
+      # already running TLP never sets this, so mkDefault alone left the
+      # assertion firing. omarchy-powerprofiles-set stops working, which is
+      # the honest consequence of choosing the other power daemon.
+      power-profiles-daemon.enable = lib.mkDefault (!config.services.tlp.enable);
 
       # The bar's battery widget and the power panel both read UPower over
       # DBus, and omarchy-powerprofiles-set autodetect gates on its OnBattery
       # property. That read is `2>/dev/null` with a fallback, so without the
       # daemon it does not fail -- it silently concludes you are on AC and
       # never switches to power-saver.
-      upower.enable = true;
+      upower.enable = lib.mkDefault true;
     };
 
     # The anchor ~/.XCompose includes. That file is written once at first
@@ -282,21 +340,21 @@ in
     ];
 
     # install/config/docker.sh
-    virtualisation.docker.enable = true;
+    virtualisation.docker.enable = lib.mkDefault true;
 
     networking = {
       # install/config/firewall.sh (upstream uses ufw)
-      firewall.enable = true;
-      networkmanager.enable = true;
+      firewall.enable = lib.mkDefault true;
+      networkmanager.enable = lib.mkDefault true;
     };
 
     # install/config/lockscreen-pam.sh
     security.pam.services.hyprlock = { };
 
     # bin/omarchy-brightness-display-ddc talks to monitors over i2c
-    hardware.i2c.enable = true;
+    hardware.i2c.enable = lib.mkDefault true;
 
-    boot.plymouth.enable = true;
+    boot.plymouth.enable = lib.mkDefault true;
 
     fonts.packages = [
       # Omarchy's own icon font travels inside the package, at
@@ -313,7 +371,7 @@ in
     ]);
 
     xdg.portal = {
-      enable = true;
+      enable = lib.mkDefault true;
       # xdg-desktop-portal-gtk is in upstream's base.packages. A portal is
       # registered, not merely installed, so it belongs here rather than in
       # the package's runtimeDeps. The hyprland portal comes from
