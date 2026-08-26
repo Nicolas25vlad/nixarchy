@@ -446,6 +446,21 @@ stdenvNoCC.mkDerivation {
       fi
     done
 
+    # install/user/xcompose.sh writes ~/.XCompose at first login with a
+    # hardcoded include of /usr/share/omarchy/default/xcompose, which does not
+    # exist here -- so xkbcommon failed to parse the file and every compose
+    # sequence the manual documents (CapsLock m s for an emoji) was silently
+    # dead:
+    #
+    #   .XCompose:4:9: failed to open included Compose file
+    #   warn: failed to instantiate compose table; dead keys will not work
+    #
+    # Pointed at /etc rather than at this store path: ~/.XCompose is written
+    # once and never rewritten, so a store path would go stale the first time
+    # the old generation is collected. /etc/omarchy is rebuilt with the system
+    # and always names the current package -- see modules/nixos.nix.
+    substituteInPlace $out/share/omarchy/install/user/xcompose.sh       --replace-fail '/usr/share/omarchy/default/xcompose'         '/etc/omarchy/xcompose'
+
     # The SDDM greeter theme. Upstream installs this with omarchy-refresh-sddm,
     # which copies default/sddm/omarchy into /usr/share/sddm/themes -- a path
     # NixOS has no writable version of. Putting it in the package instead means

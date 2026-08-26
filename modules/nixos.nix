@@ -265,6 +265,11 @@ in
       upower.enable = true;
     };
 
+    # The anchor ~/.XCompose includes. That file is written once at first
+    # login and never rewritten, so it cannot name a store path: this one is
+    # regenerated with the system and always points at the current package.
+    environment.etc."omarchy/xcompose".source = "${cfg.package}/share/omarchy/default/xcompose";
+
     # glib looks for compiled schemas in $XDG_DATA_DIRS/glib-2.0/schemas, but
     # nixpkgs' glib setup hook relocates them to
     # share/gsettings-schemas/<name>/glib-2.0/schemas so that two packages

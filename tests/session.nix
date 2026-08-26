@@ -270,6 +270,23 @@ pkgs.testers.runNixOSTest {
             f"test -s /home/omarchy/.local/state/omarchy/current/theme/{generated}")
 
 
+    # ---- compose sequences ----------------------------------------------
+    # install/user/xcompose.sh writes ~/.XCompose at first login including a
+    # path that upstream owns as /usr/share/omarchy. Getting that wrong is
+    # silent: xkbcommon logs a parse failure into the client's stderr and
+    # every CapsLock compose sequence in the manual stops working, with
+    # nothing on screen to say so.
+    machine.succeed("test -s /etc/omarchy/xcompose")
+    machine.succeed("grep -q 'Multi_key' /etc/omarchy/xcompose")
+
+    # The include has to resolve from the file the session will actually read.
+    included = machine.succeed(
+        "sed -n 's/^include \"\\(.*\\)\"$/\\1/p' /home/omarchy/.XCompose"
+        " | grep -v '%L' || true").strip()
+    print(f"~/.XCompose includes: {included!r}")
+    if included:
+        machine.succeed(f"test -e {included}")
+
     # ---- does the wallpaper actually render? ----------------------------
     # Everything else here proves the tree assembles. This proves the desktop
     # is not black -- which every other check passed while it was.
