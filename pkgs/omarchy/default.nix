@@ -404,7 +404,15 @@ stdenvNoCC.mkDerivation {
     # the Google ones -- and the Docker and Disk Usage launchers are simply
     # absent from the launcher, and `omarchy webapp` can only add new ones.
     install -d $out/share/applications $out/share/icons/hicolor/256x256/apps
-    install -m644 ${src}/applications/*.desktop $out/share/applications/
+    for desktop in ${src}/applications/*.desktop; do
+      # foot, imv and mpv already ship these, and two identical relative paths
+      # make buildEnv refuse to construct the profile at all. Upstream carries
+      # them because on Arch it owns /usr/share/applications outright.
+      case "$(basename "$desktop")" in
+        foot.desktop | imv.desktop | mpv.desktop) continue ;;
+      esac
+      install -m644 "$desktop" $out/share/applications/
+    done
 
     # Each Icon= key is the file's basename lowercased with runs of non
     # alphanumerics collapsed to a dash -- safe_icon_name() in
@@ -424,8 +432,6 @@ stdenvNoCC.mkDerivation {
     for desktop in $out/share/applications/*.desktop; do
       icon=$(sed -n 's/^Icon=//p' "$desktop")
       [ -n "$icon" ] || continue
-      # foot, imv and mpv name icons their own packages ship.
-      case "$icon" in foot | imv | mpv) continue ;; esac
       if [ ! -e "$out/share/icons/hicolor/256x256/apps/$icon.png" ]; then
         echo "$(basename "$desktop") wants icon '$icon', which is not installed" >&2
         exit 1
