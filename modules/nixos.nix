@@ -24,6 +24,25 @@ in
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
     };
 
+    displayManager = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Enable SDDM with Omarchy's greeter. Turn it off on a machine that
+        already has one: GDM, greetd, LightDM and ly all launch Omarchy's
+        session out of wayland-sessions perfectly well, and you lose the
+        branded greeter rather than the desktop. Two display managers at once
+        is not a working configuration -- NixOS gets two definitions of
+        displayManager.generic.execCmd and refuses to build.
+
+        This is an option rather than something derived from whether another
+        greeter is enabled, because deriving it does not work: NixOS computes
+        parts of the display-manager machinery *from* sddm.enable, so reading
+        gdm.enable or greetd.enable back out of the config closes a loop and
+        evaluation dies with "infinite recursion". Asking outright cannot.
+      '';
+    };
+
     binaryCaches = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -251,23 +270,10 @@ in
     # mkForce their way out one option at a time. Their setting wins now, and
     # they lose only the feature that depended on it.
     services = {
-      # SDDM only if nothing else is already greeting. A machine that already
-      # has GDM, LightDM, greetd or ly does not want a second display manager
-      # -- NixOS gives it two definitions of displayManager.generic.execCmd
-      # and refuses to build, which is a baffling error to meet when all you
-      # did was add a desktop. The existing greeter launches Omarchy's session
-      # from wayland-sessions perfectly well; only the branded greeter is lost.
-      #
-      # mkDefault on top, so `sddm.enable = true` still forces the issue.
+      # See programs.nixarchy.displayManager for why this is an option of our
+      # own rather than a look at whether another greeter is already enabled.
       displayManager.sddm = {
-        enable = lib.mkDefault (
-          !(
-            config.services.displayManager.gdm.enable
-            || config.services.displayManager.ly.enable
-            || config.services.xserver.displayManager.lightdm.enable
-            || config.services.greetd.enable
-          )
-        );
+        enable = lib.mkIf cfg.displayManager (lib.mkDefault true);
         wayland.enable = lib.mkDefault true;
 
         # etc/sddm.conf.d/10-theme.conf. The theme itself rides in the package
