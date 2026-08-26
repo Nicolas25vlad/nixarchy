@@ -37,7 +37,7 @@ More in [`docs/screenshots/`](docs/screenshots).
 | **Update menu** | `nix flake update` + `nixos-rebuild switch --flake` |
 | 39 apps in the selection | 28 from nixpkgs, 5 as NixOS modules, 4 built here, 2 with no equivalent |
 | Learn menu | NixOS wiki, `search.nixos.org` packages and options |
-| Shell functions | the rc chain sourced into interactive bash |
+| Shell functions | the rc chain sourced into interactive bash **and zsh** |
 | RetroArch | 13 libretro cores, resolved from the store rather than `/usr/lib` |
 
 ## Why vendoring
@@ -535,7 +535,9 @@ Known gaps:
   `/etc/brave/policies/managed`
 - RetroArch's default core set is free-licensed only, so snes9x, genesis-plus-gx,
   mame and dolphin need `allowUnfree` and a `withCores` override
-- the shell rc chain is bash only, as upstream is; zsh and fish get nothing
+- fish gets nothing from the shell chain. bash and zsh both work; fish is
+  neither POSIX-ish enough to source upstream's files nor worth forking them
+  for until somebody asks
 - Install rows that name an Arch package tell you the nixpkgs name and the
   option to put it in, rather than installing it. Fonts, the packages
   `omarchy install dev-env` adds behind a language, and Ollama are all mapped;

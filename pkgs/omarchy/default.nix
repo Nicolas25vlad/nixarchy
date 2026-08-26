@@ -539,6 +539,11 @@ stdenvNoCC.mkDerivation {
     # restoring the lockout.
     substituteInPlace $out/share/sddm/themes/omarchy/Main.qml       --replace-fail         'property string currentUser: userModel.lastUser'         'property string currentUser: userModel.lastUser || userModel.data(userModel.index(0, 0), Qt.UserRole + 1) || ""'
 
+    # Omarchy's shell for zsh. Upstream has a bash rc chain and nothing else,
+    # so a zsh user got none of the aliases or functions the manual documents.
+    # See the file for what is sourced as-is and what had to be rewritten.
+    install -Dm644 ${./zsh-rc} $out/share/omarchy/default/zsh/rc
+
     # Wear the name. Omarchy's logo is a pixel font on a 15-unit grid and
     # logo.png is logo.svg rendered 800px wide and tinted, so "NIXARCHY" can be
     # built from the same source: ARCHY is upstream's own five glyphs moved

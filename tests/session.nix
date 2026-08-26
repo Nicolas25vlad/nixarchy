@@ -26,6 +26,11 @@ pkgs.testers.runNixOSTest {
       inputs.home-manager.nixosModules.home-manager
     ];
 
+    # zsh alongside bash, so the shell chain is exercised in the shell most
+    # people who already have a NixOS config are using. Upstream ships bash
+    # only, so without this the zsh half is untested by construction.
+    programs.zsh.enable = true;
+
     programs.nixarchy = {
       enable = true;
       # Somewhere real for nixarchy-apply to copy the selection into. The VM
@@ -275,6 +280,31 @@ pkgs.testers.runNixOSTest {
         machine.succeed(
             f"test -s /home/omarchy/.local/state/omarchy/current/theme/{generated}")
 
+
+    # ---- the shell chain, in zsh -----------------------------------------
+    # Omarchy's aliases and functions are a bash rc chain upstream; a zsh user
+    # got none of them. Asserted by running zsh the way a login shell would,
+    # rather than by checking a file exists somewhere.
+    # Double quotes inside: the `user` template wraps its argument in su -c
+    # '...', so a single quote here closes it early and su runs something
+    # else entirely.
+    zsh_probe = (
+        'zsh -ic "type tdl >/dev/null 2>&1 && echo HAVE_TDL; '
+        'type compress >/dev/null 2>&1 && echo HAVE_COMPRESS; '
+        'alias ls >/dev/null 2>&1 && echo HAVE_LS_ALIAS" 2>&1')
+    shell_out = machine.succeed(user % zsh_probe)
+    print(f"zsh: {shell_out.split()}")
+    assert "HAVE_TDL" in shell_out, (
+        f"the tmux layout functions did not reach zsh: {shell_out}")
+    assert "HAVE_COMPRESS" in shell_out, (
+        f"Omarchy's functions did not reach zsh: {shell_out}")
+    assert "HAVE_LS_ALIAS" in shell_out, (
+        f"Omarchy's aliases did not reach zsh: {shell_out}")
+
+    # And the same in bash, which must not have regressed.
+    bash_out = machine.succeed(
+        user % 'bash -ic "type tdl >/dev/null 2>&1 && echo HAVE_TDL" 2>&1')
+    assert "HAVE_TDL" in bash_out, f"bash regressed: {bash_out}"
 
     # ---- Arch package names get nixpkgs answers --------------------------
     # Every omarchy-install-* script routes through omarchy-pkg-add, so this is

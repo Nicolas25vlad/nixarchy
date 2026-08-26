@@ -136,6 +136,26 @@ in
       '';
     };
 
+    shellIntegration = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Source Omarchy's shell chain into interactive zsh, when zsh is
+        enabled. Upstream ships bash and nothing else, so this is the same
+        aliases and functions -- compress, dip, hdl, iso2sd, the tmux layouts
+        -- reaching a shell that had none of them.
+
+        Three of upstream's five rc files are portable and are sourced as-is.
+        The two that are genuinely bash (shopt and BASH_COMPLETION internals;
+        `mise activate bash`, `starship init bash`, fzf's bash key bindings)
+        are done against the same tools' zsh support instead. bash-specific
+        completions and the readline inputrc are left alone: zsh has compinit
+        and ZLE, and a half-ported version of either is worse than neither.
+
+        See programs.nixarchy.bashIntegration for bash.
+      '';
+    };
+
     bashIntegration = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -252,6 +272,14 @@ in
       # by NixOS respectively.
       bash.interactiveShellInit = lib.mkIf cfg.bashIntegration ''
         source ${cfg.package}/share/omarchy/default/bash/rc
+      '';
+
+      # The same for zsh, which upstream does not ship. Only when zsh is
+      # actually enabled: programs.zsh.interactiveShellInit on a machine with
+      # no zsh writes an rc nothing reads, and turning zsh on for someone who
+      # did not ask is not this module's business.
+      zsh.interactiveShellInit = lib.mkIf (cfg.shellIntegration && config.programs.zsh.enable) ''
+        source ${cfg.package}/share/omarchy/default/zsh/rc
       '';
     };
 
