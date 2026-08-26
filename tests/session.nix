@@ -270,6 +270,31 @@ pkgs.testers.runNixOSTest {
             f"test -s /home/omarchy/.local/state/omarchy/current/theme/{generated}")
 
 
+    # ---- the Omarchy session entry ---------------------------------------
+    # What lets nixarchy sit beside an existing Hyprland: a session of its own
+    # that names Omarchy's hyprland.lua with --config, rather than needing to
+    # own ~/.config/hypr/hyprland.lua.
+    #
+    # Asserted in the system profile, not just in sessionPackages: greetd
+    # greeters read /run/current-system/sw/share/wayland-sessions and
+    # sessionPackages alone does not populate it.
+    session_file = "/run/current-system/sw/share/wayland-sessions/omarchy.desktop"
+    machine.succeed(f"test -s {session_file}")
+
+    # DesktopNames must stay Hyprland: xdg-desktop-portal-hyprland declares
+    # UseIn=wlroots;Hyprland;... and binds for nothing else, so any other name
+    # silently breaks ScreenCast and Screenshot inside the session.
+    machine.succeed(f"grep -q '^DesktopNames=Hyprland$' {session_file}")
+
+    # And the config it points at has to exist, or the session dies on launch
+    # with a message nobody sees.
+    launcher = machine.succeed(
+        f"sed -n 's/^Exec=//p' {session_file}").strip().split()[0]
+    cfg = machine.succeed(
+        f"grep -oE '[^ ]+/config/hypr/hyprland.lua' {launcher} | head -1").strip()
+    machine.succeed(f"test -f {cfg}")
+    print(f"omarchy session -> {cfg}")
+
     # ---- compose sequences ----------------------------------------------
     # install/user/xcompose.sh writes ~/.XCompose at first login including a
     # path that upstream owns as /usr/share/omarchy. Getting that wrong is

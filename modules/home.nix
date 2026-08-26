@@ -49,15 +49,18 @@ in
         nixarchy: ~/.config/hypr is already managed by Home Manager
         (wayland.windowManager.hyprland, or an xdg.configFile "hypr/..." entry).
 
-        Omarchy's hyprland.lua will NOT be installed -- the seed never
-        overwrites a file you own -- so autostart.lua and bindings.lua will sit
-        in ~/.config/hypr unread, and the session will come up without
-        Omarchy's bar or keybindings.
+        Omarchy's hyprland.lua is therefore NOT installed -- the seed never
+        overwrites a file you own -- so nothing in ~/.config/hypr loads
+        Omarchy's bar or its keybindings.
 
-        Either drop your own Hyprland config and let Omarchy own the session,
-        or keep it and treat nixarchy as a source of applications and menus
-        rather than a desktop. Both are reasonable; silently getting the second
-        while expecting the first is not.
+        Log in through the "Omarchy" entry rather than your own Hyprland
+        session. It runs Hyprland against Omarchy's own hyprland.lua with
+        --config, so it needs none of ~/.config/hypr/hyprland.lua, and both
+        sessions work: yours stays yours, Omarchy's is Omarchy's. It is
+        registered by programs.nixarchy.session, which is on by default.
+
+        With that option off, this configuration gets Omarchy's applications
+        and menus but never its desktop.
       '';
 
     home = {

@@ -7,6 +7,33 @@ inputs:
 }:
 let
   cfg = config.programs.nixarchy;
+
+  # Omarchy's session, launched from its own hyprland.lua in the store rather
+  # than from ~/.config/hypr/hyprland.lua. Hyprland's --config takes the entry
+  # point; the modules it requires still resolve through $HOME/.config, which
+  # is where the Home Manager seed puts them.
+  omarchySessionLauncher = pkgs.writeShellScript "omarchy-session" ''
+    export OMARCHY_PATH=${cfg.package}/share/omarchy
+    exec ${pkgs.uwsm}/bin/uwsm start -N Omarchy -D Hyprland --       ${config.programs.hyprland.package}/bin/Hyprland       --config ${cfg.package}/share/omarchy/config/hypr/hyprland.lua
+  '';
+
+  # providedSessions has to match the .desktop basename or NixOS refuses it.
+  omarchySession =
+    (pkgs.writeTextFile {
+      name = "omarchy-wayland-session";
+      destination = "/share/wayland-sessions/omarchy.desktop";
+      text = ''
+        [Desktop Entry]
+        Name=Omarchy
+        Comment=The Omarchy desktop, on Hyprland
+        Exec=${omarchySessionLauncher}
+        Type=Application
+        DesktopNames=Hyprland
+      '';
+    }).overrideAttrs
+      (_: {
+        passthru.providedSessions = [ "omarchy" ];
+      });
 in
 {
   imports = [
@@ -22,6 +49,25 @@ in
       default = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.omarchy;
       defaultText = lib.literalExpression "nixarchy.packages.\${system}.omarchy";
       description = "The vendored Omarchy tree providing OMARCHY_PATH.";
+    };
+
+    session = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Register "Omarchy" as its own entry in wayland-sessions, so any
+        greeter can offer it alongside whatever else the machine runs.
+
+        This is what makes nixarchy coexist with an existing Hyprland setup.
+        The session names Omarchy's own hyprland.lua with Hyprland's --config,
+        so it does not need to own ~/.config/hypr/hyprland.lua -- yours keeps
+        serving your session, and this one keeps serving Omarchy's.
+
+        The two still share ~/.config/hypr/{monitors,input,bindings,looknfeel,
+        autostart}.lua, because Omarchy's bootstrap builds Hyprland's Lua
+        module path from $HOME/.config and nothing else. Editing those changes
+        both sessions.
+      '';
     };
 
     displayManager = lib.mkOption {
@@ -211,6 +257,10 @@ in
         cfg.package
       ]
       ++ cfg.package.passthru.runtimeDeps
+      # sessionPackages alone does not populate
+      # /run/current-system/sw/share/wayland-sessions, and that is where greetd
+      # greeters actually look -- so the session package goes here as well.
+      ++ lib.optional cfg.session omarchySession
       ++ (with pkgs; [
         # omarchy-theme-set-gnome applies the light/dark half of every theme
         # with `gsettings set org.gnome.desktop.interface`, and on Arch the
@@ -328,6 +378,16 @@ in
       # never switches to power-saver.
       upower.enable = lib.mkDefault true;
     };
+
+    # An Omarchy entry of its own in wayland-sessions. Without it the only way
+    # to reach the desktop is for Omarchy to own ~/.config/hypr/hyprland.lua,
+    # which a machine that already runs Hyprland cannot give it.
+    #
+    # DesktopNames stays "Hyprland" rather than "omarchy":
+    # xdg-desktop-portal-hyprland declares UseIn=wlroots;Hyprland;... and would
+    # not bind for any other name, which silently breaks ScreenCast and
+    # Screenshot inside the session.
+    services.displayManager.sessionPackages = lib.mkIf cfg.session [ omarchySession ];
 
     # The anchor ~/.XCompose includes. That file is written once at first
     # login and never rewritten, so it cannot name a store path: this one is

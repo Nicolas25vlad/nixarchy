@@ -222,7 +222,8 @@ Two cases are handled rather than merely deferred:
 | Your machine | What happens |
 | --- | --- |
 | TLP for power management | power-profiles-daemon is left off; NixOS forbids both. `omarchy powerprofiles` stops working, nothing else does |
-| GDM, LightDM, greetd or ly | SDDM is left off and your greeter launches Omarchy's session from `wayland-sessions`. You lose the branded greeter, not the desktop |
+| GDM, LightDM, greetd or ly | set `displayManager = false`; your greeter picks up the **Omarchy** entry from `wayland-sessions` and you lose only the branded greeter |
+| Hyprland already configured | log in through the **Omarchy** session. It runs Hyprland against Omarchy's own `hyprland.lua` via `--config`, so it never needs `~/.config/hypr/hyprland.lua` and your session keeps working |
 
 Two are not, because they are not nixarchy's to resolve:
 
@@ -232,7 +233,12 @@ Two are not, because they are not nixarchy's to resolve:
 - **Hyprland itself.** `programs.hyprland.enable`, its package and `withUWSM`
   are set outright, not with `mkDefault`. Omarchy is written against Hyprland's
   Lua API; replacing the compositor means `lib.mkForce`, which is the right
-  amount of friction for that.
+  amount of friction for that. If you already pin your own Hyprland, `mkForce`
+  it -- anything from 0.55 satisfies the assertion.
+
+The two sessions do share `~/.config/hypr/{monitors,input,bindings,looknfeel,
+autostart}.lua`, because Omarchy's bootstrap builds Hyprland's Lua module path
+from `$HOME/.config` and nothing else. Only the entry point differs.
 
 ## Try it in a VM
 
