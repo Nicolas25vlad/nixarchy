@@ -241,6 +241,14 @@ stdenvNoCC.mkDerivation {
     python3
   ];
 
+  # Build-time only, and separate from buildInputs above: strictDeps keeps the
+  # two apart, and these are for generating the greeter wordmark, not for
+  # patchShebangs to resolve against.
+  nativeBuildInputs = [
+    python3
+    imagemagick
+  ];
+
   dontConfigure = true;
   dontBuild = true;
 
@@ -437,6 +445,52 @@ stdenvNoCC.mkDerivation {
         exit 1
       fi
     done
+
+    # The SDDM greeter theme. Upstream installs this with omarchy-refresh-sddm,
+    # which copies default/sddm/omarchy into /usr/share/sddm/themes -- a path
+    # NixOS has no writable version of. Putting it in the package instead means
+    # the greeter travels with the Omarchy release it came from, and
+    # services.displayManager.sddm.theme = "omarchy" is all the module needs.
+    #
+    # Without it SDDM falls back to its stock theme and the login screen is a
+    # blue gradient with a placeholder avatar, which is the first thing anyone
+    # sees of the system.
+    install -d $out/share/sddm/themes
+    cp -r ${src}/default/sddm/omarchy $out/share/sddm/themes/omarchy
+    # cp from the store carries the store's read-only bits across, and the
+    # wordmark below is written over one of these files.
+    chmod -R u+w $out/share/sddm/themes/omarchy
+
+    # Omarchy's greeter is password-only: it shows no user list and logs in
+    # whoever userModel.lastUser says, which upstream's installer seeds into
+    # /var/lib/sddm/state.conf. Nothing seeds that here, so on a fresh machine
+    # lastUser is "" and SDDM answers every password with
+    #
+    #   pam_unix(sddm:auth): check pass; user unknown
+    #   Authentication for user  ""  failed
+    #
+    # with no user list to pick from -- an install that cannot be logged into.
+    # SDDM writes state.conf itself after the first successful login, so this
+    # only has to cover the case where it does not exist yet.
+    #
+    # NameRole is Qt::UserRole + 1 in SDDM's UserModel. --replace-fail so that
+    # an upstream rewrite of this line fails the build rather than silently
+    # restoring the lockout.
+    substituteInPlace $out/share/sddm/themes/omarchy/Main.qml       --replace-fail         'property string currentUser: userModel.lastUser'         'property string currentUser: userModel.lastUser || userModel.data(userModel.index(0, 0), Qt.UserRole + 1) || ""'
+
+    # Wear the name. Omarchy's logo is a pixel font on a 15-unit grid and
+    # logo.png is logo.svg rendered 800px wide and tinted, so "NIXARCHY" can be
+    # built from the same source: ARCHY is upstream's own five glyphs moved
+    # right, and only N, I and X are drawn -- on the same grid, with the same
+    # one-cell beveled corners. Deriving it means the wordmark still matches
+    # after an Omarchy bump instead of drifting into a lookalike.
+    python3 ${./nixarchy-logo.py} ${src}/logo.svg nixarchy-logo.svg
+    magick -background none nixarchy-logo.svg -resize 800x       -fill '#a8cd76' -colorize 100       $out/share/sddm/themes/omarchy/logo.png
+
+    # The greeter's own compositor config, referenced by upstream's
+    # 10-wayland.conf. Nothing in the theme reaches outside its directory, so
+    # this is the only companion file it needs.
+    install -Dm644 ${src}/default/sddm/hyprland.lua $out/share/sddm/hyprland.lua
 
     # Wear the snowflake.
     substitute ${./menu-bar-widget.qml} \

@@ -221,6 +221,13 @@ in
       displayManager.sddm = {
         enable = true;
         wayland.enable = true;
+
+        # etc/sddm.conf.d/10-theme.conf. The theme itself rides in the package
+        # at share/sddm/themes/omarchy, and /share/sddm is already one of the
+        # paths linked into the system profile, so naming it here is enough.
+        # Without this SDDM uses its own stock theme -- a blue gradient with a
+        # placeholder avatar -- as the first screen of an Omarchy machine.
+        theme = "omarchy";
       };
 
       pipewire = {
