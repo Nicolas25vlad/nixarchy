@@ -49,8 +49,22 @@ in
             "$src"/. "$dest"/ 2>/dev/null || true
         }
 
-        seed_dir "${omarchyPath}/config/hypr"    "${config.xdg.configHome}/hypr"
-        seed_dir "${omarchyPath}/config/omarchy" "${config.xdg.configHome}/omarchy"
+        # The whole of config/, not a chosen two of it. Upstream's own docs
+        # point at ~/.config/foot/foot.ini and ~/.config/starship.toml, and
+        # omarchy-theme-set-foot, btop's color_theme and the tmux keybindings
+        # all read from ~/.config -- so seeding only hypr and omarchy left
+        # starship on its stock prompt, tmux without Omarchy's prefix and
+        # keybindings, and foot and btop unthemed.
+        seed_dir "${omarchyPath}/config" "${config.xdg.configHome}"
+
+        # install/user/theme.sh. btop.conf asks for a theme named "current",
+        # and omarchy-theme-set-templates renders btop.theme into the current
+        # theme on every switch, so this one symlink is what makes btop follow
+        # the theme. Dangling until the first theme is set, which is fine.
+        run mkdir -p "${config.xdg.configHome}/btop/themes"
+        run ln -snf \
+          "${config.home.homeDirectory}/.local/state/omarchy/current/theme/btop.theme" \
+          "${config.xdg.configHome}/btop/themes/current.theme"
 
         run mkdir -p "${config.home.homeDirectory}/.local/state/omarchy/current"
 
@@ -83,7 +97,14 @@ in
         # First-run theme. omarchy-theme-set is the only thing that may write
         # this tree; running it headless avoids poking a shell that is not up.
         if [ ! -e "${config.home.homeDirectory}/.local/state/omarchy/current/theme.name" ]; then
+          # PATH, not just the absolute path to the script: omarchy-theme-set
+          # calls its siblings by bare name -- omarchy-theme-set-templates and
+          # omarchy-theme-color among them -- and has no `set -e`. Without the
+          # package on PATH they were simply not found and it carried on and
+          # exited 0, so no template was ever rendered: the first-run theme had
+          # no btop.theme, foot.ini, alacritty.toml or gum_env.lua at all.
           run env OMARCHY_PATH="${omarchyPath}" OMARCHY_THEME_HEADLESS=1 \
+            PATH="${cfg.package}/bin:${lib.makeBinPath cfg.package.passthru.runtimeDeps}:$PATH" \
             ${cfg.package}/bin/omarchy-theme-set "${cfg.defaultTheme}" || true
         fi
       '';
@@ -111,12 +132,27 @@ in
         # omarchy-theme-set-gnome shells out to omarchy-theme-color and
         # gsettings, and a user unit does not inherit the login PATH.
         Environment = [
-          "PATH=${cfg.package}/bin:${pkgs.glib}/bin:${pkgs.coreutils}/bin"
+          "PATH=${cfg.package}/bin:${pkgs.glib}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin:%h/.nix-profile/bin"
           "OMARCHY_PATH=${omarchyPath}"
         ];
-        ExecStart = "${cfg.package}/bin/omarchy-theme-set-gnome";
+        ExecStart = [
+          "${cfg.package}/bin/omarchy-theme-set-gnome"
+          "${cfg.package}/bin/omarchy-cursor-set"
+        ];
       };
       Install.WantedBy = [ "graphical-session.target" ];
+    };
+
+    # Omarchy's own extension point -- omarchy-theme-set ends with
+    # `omarchy-hook theme-set`, which runs everything in this directory. Going
+    # through it rather than replacing omarchy-theme-set-gnome means the cursor
+    # follows a theme change without this repo owning a fork of that script.
+    xdg.configFile."omarchy/hooks/theme-set.d/cursor" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        exec ${cfg.package}/bin/omarchy-cursor-set
+      '';
     };
 
     # No systemd unit for the shell. Upstream starts it from Hyprland itself:

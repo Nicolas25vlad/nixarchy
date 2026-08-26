@@ -169,6 +169,13 @@ in
         yaru-theme
         # Yaru inherits from Adwaita for anything it does not draw itself.
         adwaita-icon-theme
+
+        # Omarchy sets a cursor size but never a cursor theme -- on Arch one
+        # comes with the desktop packages. NixOS ships none, so Hyprland used
+        # its own built-in pointer. Bibata is here rather than Yaru or Adwaita
+        # because those ship a single cursor each, and the point is to follow
+        # the theme: Ice is white for dark themes, Classic black for light.
+        bibata-cursors
       ]);
     };
 

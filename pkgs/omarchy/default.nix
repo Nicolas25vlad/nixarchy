@@ -387,6 +387,13 @@ stdenvNoCC.mkDerivation {
         exit 1
       fi
       install -Dm755 "$replacement" "$target"
+
+      # The symlink farm above was built from the files upstream shipped, and
+      # it runs before this loop. A replacement already has its link; a
+      # `# nixarchy:new` bin has none, and without one it is not on PATH --
+      # which is exactly how omarchy-retroarch-cores came to be installed and
+      # yet unreachable to the scripts that call it.
+      [ -e "$out/bin/$name" ] || ln -s "$target" "$out/bin/$name"
     done
 
     substituteInPlace $out/share/omarchy/bin/omarchy-games-retro-cores \

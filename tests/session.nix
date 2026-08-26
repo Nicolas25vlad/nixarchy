@@ -206,6 +206,37 @@ pkgs.testers.runNixOSTest {
         f"the settings portal reports {portal!r}, not dark; Chromium and every "
         "other portal-reading app will come up light.")
 
+    # ---- cursor and seeded configs --------------------------------------
+    # Omarchy sets a cursor size but no cursor theme, so Hyprland fell back to
+    # its own pointer and never followed a theme.
+    cursor = machine.succeed(
+        user % "gsettings get org.gnome.desktop.interface cursor-theme").strip()
+    print(f"cursor-theme {cursor}")
+    assert "Bibata" in cursor, f"cursor theme is {cursor}, not Bibata"
+    # The dark default theme must get the white half of the pair.
+    assert "Ice" in cursor, f"a dark theme should use Bibata-Modern-Ice, got {cursor}"
+    machine.succeed(f"test -d /run/current-system/sw/share/icons/{cursor.strip(chr(39))}/cursors")
+
+    # config/ was seeded in full, not just hypr and omarchy. These are the
+    # three the manual points users at, and each was missing.
+    machine.succeed("test -s /home/omarchy/.config/starship.toml")
+    machine.succeed("test -s /home/omarchy/.config/tmux/tmux.conf")
+    machine.succeed("test -s /home/omarchy/.config/foot/foot.ini")
+
+    # btop.conf asks for a theme literally named "current"; without the link
+    # btop starts with no theme at all.
+    machine.succeed("test -L /home/omarchy/.config/btop/themes/current.theme")
+    machine.succeed("test -s /home/omarchy/.config/btop/themes/current.theme")
+
+    # btop.theme is rendered from default/themed/*.tpl, and nothing was: the
+    # first-run theme-set ran without the package on PATH, so every sibling it
+    # calls by bare name was silently not found. foot.ini and gum_env.lua come
+    # from the same pass, so they stand in for the rest of it.
+    for generated in ["btop.theme", "foot.ini", "gum_env.lua"]:
+        machine.succeed(
+            f"test -s /home/omarchy/.local/state/omarchy/current/theme/{generated}")
+
+
     # ---- does the wallpaper actually render? ----------------------------
     # Everything else here proves the tree assembles. This proves the desktop
     # is not black -- which every other check passed while it was.
