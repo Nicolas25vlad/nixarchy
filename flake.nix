@@ -141,6 +141,15 @@
         default = self.packages.${system}.omarchy;
         inherit (pkgsFor.${system}) omarchy;
 
+        # A screencast of a real session, plus the frames it was made from.
+        # Not a check: it boots a desktop, drives a tour of it and encodes a
+        # video, which is minutes of work nobody wants on every push. Build it
+        # with `nix build .#demo` when the screencast needs refreshing.
+        demo = import ./tests/demo.nix {
+          inherit inputs;
+          pkgs = pkgsFor.${system};
+        };
+
         inherit (pkgsFor.${system}.nixarchy-apps) once grok-bot retroarch;
 
         # Re-exported so programs.nixarchy.apps.zen resolves like any other
