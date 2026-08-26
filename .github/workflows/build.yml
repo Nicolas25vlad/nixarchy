@@ -84,7 +84,10 @@ jobs:
 
           fail=0
           check() { grep -qF "$1" README.md || { echo "::error::README is missing: $1"; fail=1; }; }
-          check "| $total apps from Omarchy's menu | $nixpkgs from nixpkgs, $mod as NixOS modules, $ours built here, $un with no equivalent |"
+          # "in the selection", not "from Omarchy's menu": a preinstall like
+          # obsidian is in data/apps.nix without a menuId, because upstream has
+          # no per-app Install row for one either.
+          check "| $total apps in the selection | $nixpkgs from nixpkgs, $mod as NixOS modules, $ours built here, $un with no equivalent |"
           check "**$free of the $total apps never touch this repo.**"
           check "| nixpkgs ($free of $total apps) | "
           exit $fail

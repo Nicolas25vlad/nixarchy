@@ -29,7 +29,7 @@ More in [`docs/screenshots/`](docs/screenshots).
 | **Install menu** | picks write to a Nix config, not pacman |
 | **Remove menu** | deselects apps, never touches your own config |
 | **Update menu** | `nix flake update` + `nixos-rebuild switch --flake` |
-| 38 apps from Omarchy's menu | 27 from nixpkgs, 5 as NixOS modules, 4 built here, 2 with no equivalent |
+| 39 apps in the selection | 28 from nixpkgs, 5 as NixOS modules, 4 built here, 2 with no equivalent |
 | Learn menu | NixOS wiki, `search.nixos.org` packages and options |
 | Shell functions | the rc chain sourced into interactive bash |
 | RetroArch | 13 libretro cores, resolved from the store rather than `/usr/lib` |
@@ -242,7 +242,7 @@ done
 
 Almost nothing here waits on a maintainer.
 
-**32 of the 38 apps never touch this repo.** Brave, VSCode, Signal and the rest
+**33 of the 39 apps never touch this repo.** Brave, VSCode, Signal and the rest
 are installed as `pkgs.<name>` from **your** nixpkgs, and the five
 module-backed ones (Steam, 1Password, Tailscale, Firefox, Xbox controllers)
 come from there too — the module is NixOS', not this repo's. Your own
@@ -282,7 +282,7 @@ Most of it is not our job, and should not be:
 
 | where the app comes from | who updates it |
 |---|---|
-| nixpkgs (32 of 38 apps) | **nobody** — your own `nix flake update` |
+| nixpkgs (33 of 39 apps) | **nobody** — your own `nix flake update` |
 | pinned in this repo (2) | a weekly bot, opening a PR |
 | `zen` | upstream's own flake |
 | `retroarch` | nixpkgs, via this flake's own pin — it is a rebuild with cores |
