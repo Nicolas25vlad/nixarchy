@@ -548,11 +548,11 @@ Known gaps:
   `services.flatpak.enable` and then `flatpak install flathub
   com.nvidia.geforcenow`. Their rows name both. Xbox Cloud Gaming needs
   nothing -- it is a web app, and never touches a package manager
-- Chromium's theme *accent* is not applied: omarchy-theme-set-browser writes
-  `/etc/chromium/policies/managed/color.json` as the user, which NixOS's
-  store-managed `/etc` has no place for. Light/dark is unaffected -- that
-  travels through the settings portal, not the policy file
-- Bluetooth's DBus object manager fails in the VM
+- Chromium's theme *accent* needs `programs.nixarchy.browserThemeUser`, which
+  hands that user the browsers' policy directories. Chromium reads policy only
+  from `/etc`, with no per-user equivalent, so this lets them set policy for
+  every user of the machine -- fine alone, not fine shared. Light and dark
+  follow the theme without it
 
 ## License
 

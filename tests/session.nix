@@ -36,6 +36,10 @@ pkgs.testers.runNixOSTest {
 
       nixarchy = {
         enable = true;
+        # Off by default; on here so the accent path is actually exercised.
+        # Without it omarchy-theme-set-browser skips every policy directory
+        # and the accent silently never applies -- which is what shipped.
+        browserThemeUser = "omarchy";
         # Somewhere real for nixarchy-apply to copy the selection into. The VM
         # in vm/configuration.nix builds a full flake there; this test only
         # needs the copy to have a destination.
@@ -363,6 +367,52 @@ pkgs.testers.runNixOSTest {
     advice = machine.succeed(
         user % "omarchy-pkg-add some-unmapped-thing 2>&1 || true")
     assert "search.nixos.org" in advice, advice
+
+    # ---- bluetooth --------------------------------------------------------
+    # The bar's Bluetooth widget and both omarchy-bluetooth-* commands talk to
+    # org.bluez, and nothing here was enabling the service -- the same shape as
+    # UPower: tools installed, daemon not.
+    #
+    # What is asserted is the configuration, not a running daemon. This VM has
+    # no radio, so bluetooth.service skips itself on
+    # ConditionPathIsDirectory=/sys/class/bluetooth and org.bluez can never
+    # appear. Waiting for the bus here would be waiting for hardware, and
+    # dropping the check to make it pass would leave the actual bug -- the
+    # service never being enabled -- untested again.
+    machine.succeed("systemctl is-enabled bluetooth.service")
+
+    # And why it is not running: no radio. Checked as the absence of the
+    # directory the unit conditions on, not by looking for the "skipped"
+    # message -- systemd logs that only when something tries to start the
+    # unit, so on a run where nothing does, grepping for it finds nothing and
+    # proves nothing.
+    #
+    # If this ever fails, the VM has grown Bluetooth and the assertion above
+    # should become the stronger one: that org.bluez answers.
+    machine.succeed("test ! -d /sys/class/bluetooth")
+    print("bluetooth.service enabled; inert here only for having no radio")
+
+    # ---- the browser accent -----------------------------------------------
+    # Chromium reads policy only from /etc/<browser>/policies/managed, so
+    # upstream's script skipped it on NixOS and the accent never applied.
+    # Asserted on the file it writes, not on the directory existing.
+    machine.succeed("test -d /etc/chromium/policies/managed")
+    user_theme = machine.succeed(user % "omarchy-theme-set-browser 2>&1 || true")
+    machine.wait_until_succeeds("test -s /etc/chromium/policies/managed/color.json")
+    policy = machine.succeed("cat /etc/chromium/policies/managed/color.json")
+    print(f"chromium policy: {policy.strip()}")
+    assert "BrowserThemeColor" in policy, policy
+
+    # The colour has to be the current theme's, not the script's fallback
+    # grey -- writing #1c2027 for every theme would satisfy a weaker check.
+    expected = machine.succeed(
+        "cat /home/omarchy/.local/state/omarchy/current/theme/chromium.theme"
+        " 2>/dev/null || true").strip()
+    if expected:
+        r, g, b = (int(x) for x in expected.split(","))
+        assert f"#{r:02x}{g:02x}{b:02x}" in policy.lower(), (
+            f"policy has the fallback colour, not the theme's: {policy}")
+        print(f"accent matches the theme: {expected}")
 
     # ---- the gaming rows --------------------------------------------------
     # Three rows, three different shapes. Battle.net and GeForce NOW route

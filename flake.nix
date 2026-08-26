@@ -239,6 +239,14 @@
           pkgs = pkgsFor.${system};
         };
 
+        # Built, not evaluated, and onto a config that already exists. See
+        # tests/integration.nix for the three bugs that shipped because every
+        # other check here starts from a clean machine.
+        integration = import ./tests/integration.nix {
+          inherit inputs;
+          pkgs = pkgsFor.${system};
+        };
+
         vm-toplevel = self.nixosConfigurations.vm.config.system.build.toplevel;
       });
     };

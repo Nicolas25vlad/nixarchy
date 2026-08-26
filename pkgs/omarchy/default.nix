@@ -480,6 +480,22 @@ stdenvNoCC.mkDerivation {
         "$out/share/icons/hicolor/256x256/apps/$name.png"
     done
 
+    # Nothing may ship an unprefixed desktop file. Upstream's names are the
+    # names of real programs -- Zoom, Discord, Docker -- and a user who has any
+    # of those packages gets a profile buildEnv refuses to construct, with a
+    # message that never mentions nixarchy. The prefix is what makes that
+    # impossible, so it is checked rather than assumed.
+    for desktop in $out/share/applications/*.desktop; do
+      case "$(basename "$desktop")" in
+        omarchy-*) ;;
+        *)
+          echo "$(basename "$desktop") is not prefixed; it can collide with a" >&2
+          echo "package of the same name in a user's profile." >&2
+          exit 1
+          ;;
+      esac
+    done
+
     # Every Icon= must resolve, or the entry shows up in the launcher as a
     # blank tile. This is the drift guard: an upstream release that adds a
     # desktop file, or renames an icon, fails here rather than shipping.

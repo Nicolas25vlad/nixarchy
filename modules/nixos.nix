@@ -103,6 +103,29 @@ in
       '';
     };
 
+    browserThemeUser = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "alice";
+      description = ''
+        Let this user's theme switches set the Chromium/Chrome/Edge/Brave
+        accent colour, by creating the browsers' policy directories and giving
+        them to that user.
+
+        Off by default, and worth understanding before turning on. Chromium
+        reads policy only from /etc/<browser>/policies/managed -- there is no
+        per-user equivalent, by design, because policy is an administrator
+        control. Making that directory writable by a user therefore lets them
+        set policy for *every* user of the machine: proxies, forced
+        extensions, the lot. On a single-user desktop that is a distinction
+        without a difference; on a shared machine it is a real one.
+
+        What it buys is the accent colour alone. Light and dark already follow
+        the theme without this, through the settings portal rather than a
+        policy file -- so the browser is themed either way, just not tinted.
+      '';
+    };
+
     binaryCaches = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -438,6 +461,24 @@ in
     # Screenshot inside the session.
     services.displayManager.sessionPackages = lib.mkIf cfg.session [ omarchySession ];
 
+    # omarchy-theme-set-browser writes {"BrowserThemeColor": ...} into each
+    # browser's policy directory on every theme switch, and skips any that
+    # does not exist -- which on NixOS is all of them, so the accent silently
+    # never applied. Creating them is all that is needed; the script is
+    # upstream's and works unchanged once it has somewhere to write.
+    systemd.tmpfiles.rules = lib.mkIf (cfg.browserThemeUser != null) (
+      map (dir: "d ${dir} 0755 ${cfg.browserThemeUser} users - -") [
+        "/etc/chromium/policies"
+        "/etc/chromium/policies/managed"
+        "/etc/opt/chrome/policies"
+        "/etc/opt/chrome/policies/managed"
+        "/etc/opt/edge/policies"
+        "/etc/opt/edge/policies/managed"
+        "/etc/brave/policies"
+        "/etc/brave/policies/managed"
+      ]
+    );
+
     # The anchor ~/.XCompose includes. That file is written once at first
     # login and never rewritten, so it cannot name a store path: this one is
     # regenerated with the system and always points at the current package.
@@ -468,6 +509,20 @@ in
 
     # bin/omarchy-brightness-display-ddc talks to monitors over i2c
     hardware.i2c.enable = lib.mkDefault true;
+
+    # bluez, bluez-tools and bluez-utils are all in
+    # install/omarchy-base.packages, the bar has a Bluetooth widget, and
+    # omarchy-bluetooth-device and omarchy-bluetooth-power are two of the
+    # commands the menu offers -- but none of it works without the service,
+    # and nothing here was starting it. Every session logged
+    #
+    #   quickshell.dbus.objectmanager: Failed to create
+    #   DBusObjectManagerInterface for "org.bluez" "/"
+    #
+    # which was written off as a VM artefact for as long as this was in the
+    # README's known gaps. It is the same shape as UPower: the tools were
+    # installed, the daemon was not.
+    hardware.bluetooth.enable = lib.mkDefault true;
 
     boot.plymouth.enable = lib.mkDefault true;
 
