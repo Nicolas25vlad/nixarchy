@@ -142,6 +142,15 @@ pkgs.testers.runNixOSTest {
             + "export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\n"
             + "export HYPRLAND_INSTANCE_SIGNATURE="
             + "$(ls -t /run/user/1000/hypr 2>/dev/null | head -1)\n"
+            # Upstream gives every IPC call 2 seconds and calls anything
+            # slower "not responding". That is a guess about how fast the
+            # machine is, and it was wrong on a CI runner: the second
+            # `plugin add` failed there after cloning and printing "Added",
+            # because enabling the first plugin had set the shell reloading
+            # and it did not answer inside the budget. Raised rather than
+            # retried -- the call is not failing, it is being cut off, and
+            # this is the knob upstream provides for saying so.
+            + "export OMARCHY_SHELL_IPC_TIMEOUT=30s\n"
             + script + "\nPROBE_EOF")
         machine.succeed("chmod 0755 /tmp/probe.sh")
         run = machine.succeed if check else machine.execute
@@ -163,6 +172,7 @@ pkgs.testers.runNixOSTest {
         "cat > /tmp/ping.sh <<'EOF'\n"
         "export XDG_RUNTIME_DIR=/run/user/1000\n"
         "export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\n"
+        "export OMARCHY_SHELL_IPC_TIMEOUT=30s\n"
         "omarchy-shell shell ping\n"
         "EOF")
     machine.succeed("chmod 0755 /tmp/ping.sh")
