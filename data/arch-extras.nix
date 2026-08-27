@@ -40,6 +40,15 @@
 
   # ── omarchy-install-dev-env ─────────────────────────────────────────────
   # php and symfony-cli are apps already, so they are not repeated here.
+  # omarchy-audio-tuning wants the LSP limiter, and install/hardware's
+  # speaker-tuning.sh reaches for it by Arch name. Not a runtime dependency
+  # here: its closure is over 500MB, which is a lot to hand everyone for a
+  # feature that matters on some laptops. Mapped so the advice is right for
+  # anyone who does want it.
+  lsp-plugins-lv2 = {
+    attr = "lsp-plugins";
+    kind = "package";
+  };
   composer = {
     attr = "php.packages.composer";
     kind = "package";
