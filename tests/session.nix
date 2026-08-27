@@ -147,17 +147,27 @@ pkgs.testers.runNixOSTest {
     # happened.
     machine.wait_until_succeeds("loginctl list-sessions | grep -q greeter")
 
-    # The QML still needs a moment after the session exists before the
-    # password field takes input.
-    machine.sleep(8)
-    machine.screenshot("greeter")
-
     # A blank greeter would still accept the password and log in, so assert
     # something was actually drawn. This theme OCRs badly -- a few characters
     # is all that comes back -- so the check is "not blank", not the wording.
-    drawn = machine.get_screen_text().strip()
-    print(f"greeter OCR: {drawn!r}")
-    assert drawn, "the greeter drew nothing; a user would see a blank screen"
+    #
+    # Retried rather than slept at. Eight seconds was enough here and not on a
+    # CI runner, where this failed with "the greeter drew nothing" on a greeter
+    # that was merely slower to paint. A fixed wait is a guess about how fast
+    # the machine is; the same guess was wrong in tests/coexist.nix for the
+    # same reason. Retrying still fails if it never draws.
+    drawn = ""
+    for attempt in range(10):
+        machine.sleep(4)
+        machine.screenshot("greeter")
+        drawn = machine.get_screen_text().strip()
+        print(f"attempt {attempt}: greeter OCR {drawn!r}")
+        if drawn:
+            break
+
+    assert drawn, (
+        "the greeter never drew anything in 40s; a user would see a blank "
+        "screen")
 
     # The only user is preselected and the password field has focus.
     machine.send_chars("omarchy\n")
@@ -534,29 +544,39 @@ pkgs.testers.runNixOSTest {
         return tuple(int(out.stdout.strip()[i:i + 2], 16) for i in (0, 2, 4))
 
     machine.wait_until_succeeds("test -s $(readlink -f /home/omarchy/.local/state/omarchy/current/background)")
-    machine.sleep(5)
-    machine.screenshot("desktop")
-    shot = os.path.join(os.environ["out"], "desktop.png")
     paper = machine.succeed(
         "readlink -f /home/omarchy/.local/state/omarchy/current/background").strip()
     machine.copy_from_machine(paper, "")
     local_paper = os.path.join(os.environ["out"], os.path.basename(paper))
-
-    s_r, s_g, s_b = avg(shot)
     w_r, w_g, w_b = avg(local_paper)
-    print(f"screen    #{s_r:02X}{s_g:02X}{s_b:02X}")
-    print(f"wallpaper #{w_r:02X}{w_g:02X}{w_b:02X}")
 
+    # Retried, not slept at. This one has been passing on a five second wait
+    # only because a great deal of test runs between login and here; the same
+    # guess was wrong for the greeter above and wrong again in
+    # tests/coexist.nix, where the desktop needed twenty seconds more than it
+    # was given.
+    #
     # A wallpaper that never became a texture leaves the theme background --
     # near-black, and nothing like the image. Tolerance is wide on purpose:
     # the bar and any toast tint the average, and the point is to catch black,
     # not to grade colour accuracy.
-    delta = abs(s_r - w_r) + abs(s_g - w_g) + abs(s_b - w_b)
-    assert delta < 120, (
-        f"the desktop does not look like its wallpaper (delta {delta}). "
-        "A wallpaper wider than GL_MAX_TEXTURE_SIZE renders as nothing at all, "
-        "with Qt still reporting the image Ready -- see the sourceSize cap in "
-        "pkgs/omarchy/default.nix.")
+    delta = None
+    for attempt in range(12):
+        machine.sleep(5)
+        machine.screenshot("desktop")
+        shot = os.path.join(os.environ["out"], "desktop.png")
+        s_r, s_g, s_b = avg(shot)
+        delta = abs(s_r - w_r) + abs(s_g - w_g) + abs(s_b - w_b)
+        print(f"attempt {attempt}: screen #{s_r:02X}{s_g:02X}{s_b:02X} "
+              f"wallpaper #{w_r:02X}{w_g:02X}{w_b:02X} delta {delta}")
+        if delta < 120:
+            break
+
+    assert delta is not None and delta < 120, (
+        f"the desktop never looked like its wallpaper (delta {delta} after "
+        "60s). A wallpaper wider than GL_MAX_TEXTURE_SIZE renders as nothing "
+        "at all, with Qt still reporting the image Ready -- see the "
+        "sourceSize cap in pkgs/omarchy/default.nix.")
     print(f"wallpaper renders (delta {delta})")
 
   '';
