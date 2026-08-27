@@ -584,6 +584,7 @@ one of these runs in CI on each push.
 | Sitting beside an existing Hyprland | `checks.coexist` boots the Omarchy session with a foreign `hyprland.lua` in place and asserts the bar comes up anyway |
 | The CLI | `omarchy commands --check`, plus a count the build refuses to let drift |
 | The Install/Remove/Update menus | `checks.session` enables an app, applies it, and asserts the selection reached the flake |
+| Third-party plugins | `checks.plugin` runs `omarchy plugin add <url> --enable` for two published plugins, then asks the *running shell* whether it loaded them -- not the filesystem -- before disabling and removing both |
 | The shell chain in bash, zsh and fish | asserted by running each shell and calling the functions, not by checking a file exists |
 | Compose keys, Bluetooth, UPower, the browser accent | asserted on the thing itself: the include resolves, the unit is enabled, the portal answers, the colour is the theme's |
 
@@ -628,6 +629,13 @@ Known gaps in detail:
   `services.flatpak.enable` and then `flatpak install flathub
   com.nvidia.geforcenow`. Their rows name both. Xbox Cloud Gaming needs
   nothing -- it is a web app, and never touches a package manager
+- Plugins are runtime state, not configuration. `omarchy plugin add` clones
+  into `~/.config/omarchy/plugins` and the running shell picks it up, so a
+  machine rebuilt from the same flake comes up without them. That is upstream's
+  design and nixarchy keeps it deliberately -- pinning a plugin in the flake
+  would turn trying one into a rebuild -- but it does mean plugins are the one
+  part of this desktop your flake does not describe. Back up that directory, or
+  re-add them by hand
 - Chromium's theme *accent* needs `programs.nixarchy.browserThemeUser`, which
   hands that user the browsers' policy directories. Chromium reads policy only
   from `/etc`, with no per-user equivalent, so this lets them set policy for
