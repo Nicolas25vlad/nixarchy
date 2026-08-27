@@ -250,6 +250,62 @@ pkgs.testers.runNixOSTest {
             "-- it gets whatever pkgs/omarchy/default.nix declares.")
     print("the commands omteleprompt shells out to all resolve")
 
+    # ---- the menu path ----------------------------------------------------
+    # Upstream already ships the whole plugin menu -- Setup > Plugins, with
+    # add, enable, disable, clone and remove -- so nothing here adds a row.
+    # What is worth proving is that nixarchy does not take one away: the menu
+    # the user sees is upstream's default with our extension merged over it by
+    # id, and that extension rewrites every install.* and remove.* row. An
+    # override that reused one of these ids, or a `when: false` landing on the
+    # wrong key, would delete the plugin menu silently -- the row simply would
+    # not render, with no error anywhere.
+    #
+    # The menu is read through $OMARCHY_PATH, not from a fixed system path --
+    # that is the single indirection point the whole package is built around,
+    # so the check resolves it the same way the running code does rather than
+    # hardcoding a store path.
+    rows = ["setup.plugin", "setup.plugin.add", "setup.plugin.enable",
+            "setup.plugin.disable", "setup.plugin.clone", "setup.plugin.remove"]
+    probe = (
+        'menu="$OMARCHY_PATH/default/omarchy/omarchy-menu.jsonc"\n'
+        'test -f "$menu" || { echo "NO-MENU $menu"; exit 1; }\n'
+        'for row in ' + " ".join(rows) + '; do\n'
+        '  grep -q "\\"$row\\"" "$menu" || echo "MISSING $row"\n'
+        'done\n')
+    missing = user(probe).strip()
+    assert not missing, f"upstream's plugin menu rows are not all there: {missing}"
+    print(f"upstream's menu still defines all {len(rows)} plugin rows")
+
+    # And our extension must not shadow any of them. Checked as "no key starts
+    # with setup.plugin" rather than by merging the two files, because that is
+    # the property that actually has to hold: if we never name these ids, we
+    # cannot break them.
+    ext = machine.succeed("cat /etc/nixarchy/omarchy-menu.jsonc")
+    shadowed = [r for r in rows if f'"{r}"' in ext]
+    assert not shadowed, (
+        f"the nixarchy menu extension overrides {shadowed}. Those rows are "
+        "upstream's plugin menu, and an override merged over them by id can "
+        "hide them with no error.")
+    print("the nixarchy menu extension leaves them alone")
+
+    # The commands those rows invoke, which is the other way the menu breaks:
+    # a row that renders and then does nothing when chosen.
+    for cmd in ["omarchy-menu-plugin", "omarchy-plugin-add",
+                "omarchy-menu-select", "omarchy-notification-send",
+                "omarchy-launch-floating-terminal-with-presentation"]:
+        status, _ = machine.execute(f"su omarchy -c 'command -v {cmd}'")
+        assert status == 0, (
+            f"the Setup > Plugins menu calls '{cmd}', which is not on PATH. "
+            "The row would render and do nothing.")
+    print("every command the plugin rows call resolves")
+
+    # Remove is the one row with a condition on it, and it is a bash builtin
+    # -- `compgen -G`, which is not in dash or POSIX sh. With both plugins
+    # installed it must say yes; the same expression is checked against an
+    # empty directory after the removals below.
+    user("compgen -G \"$HOME/.config/omarchy/plugins/*/manifest.json\"")
+    print("the Remove Plugin row shows itself while plugins are installed")
+
     # ---- and off again ----------------------------------------------------
     # An add that cannot be undone is half a feature, and remove is what a user
     # reaches for when a plugin misbehaves -- which, for arbitrary unsandboxed
@@ -267,5 +323,14 @@ pkgs.testers.runNixOSTest {
         machine.succeed(
             f"test ! -d /home/omarchy/.config/omarchy/plugins/{p['id']}")
     print("remove takes the directories away again")
+
+    # and the Remove Plugin row hides itself again, which is the negative half
+    # of the guard checked above. Without this the grep would pass on a `when`
+    # that simply always succeeds.
+    status, _ = machine.execute(
+        "su omarchy -c 'compgen -G \"$HOME/.config/omarchy/plugins/*/manifest.json\"'")
+    assert status != 0, (
+        "the Remove Plugin row still shows itself with no plugins installed")
+    print("and hides itself again once they are gone")
   '';
 }

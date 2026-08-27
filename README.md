@@ -178,6 +178,15 @@ declarative:
 omarchy plugin add https://github.com/seyhunak/omteleprompt.git --enable
 ```
 
+Or from the menu, which is where most people will find it: **Setup → Plugins**
+has Add, Enable, Disable, Clone and Remove. Add opens a floating terminal and
+asks for the URL. Those rows are upstream's own — nixarchy adds none and, more
+to the point, takes none away: the menu you see is Omarchy's default with the
+nixarchy extension merged over it by id, and that extension rewrites only the
+`install.*` and `remove.*` rows. The check asserts it never names a
+`setup.plugin.*` id, because an override that did would hide the row with no
+error anywhere.
+
 That clones into `~/.config/omarchy/plugins/` at runtime and the running shell
 picks it up — no rebuild, no flake edit, nothing added to `apps.nix`. It is
 upstream's design and nixarchy keeps it: a plugin is somebody's QML loaded into
