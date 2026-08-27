@@ -524,7 +524,19 @@ in
     # installed, the daemon was not.
     hardware.bluetooth.enable = lib.mkDefault true;
 
-    boot.plymouth.enable = lib.mkDefault true;
+    boot.plymouth = {
+      enable = lib.mkDefault true;
+      # Omarchy's own splash, which upstream installs by copying into
+      # /usr/share/plymouth/themes from omarchy-refresh-plymouth. Nothing was
+      # doing that here, so plymouth came up with NixOS' default theme -- the
+      # one screen every boot shows, unbranded.
+      #
+      # mkDefault on both: a theme is a taste, and someone who has already
+      # chosen one should keep it. NixOS asserts the named theme exists in
+      # themePackages, so a mismatch fails the build rather than the boot.
+      themePackages = lib.mkDefault [ cfg.package ];
+      theme = lib.mkDefault "omarchy";
+    };
 
     fonts.packages = [
       # Omarchy's own icon font travels inside the package, at

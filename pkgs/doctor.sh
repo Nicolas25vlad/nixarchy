@@ -142,6 +142,24 @@ else
 fi
 say ""
 
+# ---- the boot splash -----------------------------------------------------
+# nixarchy sets boot.plymouth.theme to its own, with mkDefault. Anyone who
+# already chose one keeps it and needs no mkForce -- but they will not get
+# Omarchy's splash either, and finding that out at the next boot rather than
+# here is the sort of surprise this script exists to prevent.
+say "${bold}Boot splash${off}"
+plymouth_theme=$( (grep -h '^Theme=' /etc/plymouth/plymouthd.conf 2>/dev/null |
+  head -1 | cut -d= -f2) || true)
+if [ -n "$plymouth_theme" ]; then
+  finding "Plymouth is showing '$plymouth_theme'" "$warn" ""
+  say "     nixarchy defaults boot.plymouth.theme to its own splash, so yours"
+  say "     wins and nothing collides. Drop your setting to take Omarchy's."
+  notes+=("Your Plymouth theme '${plymouth_theme}' is kept. nixarchy only defaults its own, so no mkForce is needed either way.")
+else
+  finding "No Plymouth theme set" "$ok" "you get Omarchy's splash"
+fi
+say ""
+
 # ---- things nixarchy defers on -------------------------------------------
 say "${bold}Services${off}"
 if systemctl is-enabled tlp.service >/dev/null 2>&1; then

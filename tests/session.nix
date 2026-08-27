@@ -5,6 +5,17 @@
   # handed it rather than finding it in the system profile.
   doctor,
 }:
+let
+  # A real published Omarchy theme, pinned. `omarchy theme install` is the
+  # sibling of `omarchy plugin add`: it clones a git URL at runtime, past the
+  # same omarchy-git-url-check, into ~/.config/omarchy -- so it depends on the
+  # same thing being writable, and nothing covered it.
+  lumonTheme = pkgs.fetchgit {
+    url = "https://github.com/OldJobobo/omarchy-lumon-theme.git";
+    rev = "553638f04efc12f4439debd413eaf3ac838a1f9a";
+    hash = "sha256-DkuuYlxYYh4hZrL+2dUVnrlxfP3uXsbuIJWRVaZcmGk=";
+  };
+in
 # Drives a real Omarchy session and reports what it logged.
 #
 # This exists because the failure that matters -- "the panel shows for a few
@@ -100,6 +111,22 @@ pkgs.testers.runNixOSTest {
     system.activationScripts.testFlakeDir = ''
       mkdir -p /etc/nixos
       chmod 0777 /etc/nixos
+    '';
+
+    # The theme's own files turned back into a repository to clone from, the
+    # same way tests/plugin.nix serves its plugins: fetchgit hands over a plain
+    # directory with no .git, and a test machine has no network.
+    system.activationScripts.themeRepo = ''
+      if [ ! -d /srv/lumon/.git ]; then
+        mkdir -p /srv/lumon
+        cp -r --no-preserve=mode,ownership ${lumonTheme}/. /srv/lumon/
+        cd /srv/lumon
+        export HOME=/root
+        ${pkgs.git}/bin/git init -q -b main
+        ${pkgs.git}/bin/git -c user.email=t@t -c user.name=t add -A
+        ${pkgs.git}/bin/git -c user.email=t@t -c user.name=t commit -q -m lumon
+      fi
+      chmod -R a+rX /srv/lumon
     '';
   };
 
@@ -461,6 +488,60 @@ pkgs.testers.runNixOSTest {
     assert "already installed" in out, (
         "a font this system ships was reported missing -- fc-list is either "
         "not on PATH or the check is losing to SIGPIPE under pipefail")
+
+    # ---- installing a theme from a git URL --------------------------------
+    # The sibling of `omarchy plugin add`, and it was the larger untested
+    # surface: it clones a real repository into ~/.config/omarchy/themes at
+    # runtime and then applies it. Everything the plugin flow needs, this needs
+    # too -- a writable config directory, git on PATH, the URL gate -- plus one
+    # thing plugins never touch: the theme has to actually be *applied*, which
+    # runs the whole template chain across foot, btop, gtk, chromium and the
+    # wallpaper.
+    #
+    # file:// for the clone, as in tests/plugin.nix: a real transport in
+    # omarchy-git-url-check's allowlist, with the scheme itself checked
+    # separately below since that is the only part file:// cannot exercise.
+    machine.succeed(user % "omarchy-git-url-check "
+                    "https://github.com/OldJobobo/omarchy-lumon-theme.git")
+    print("the https theme URL from omarchy.org/themes is accepted")
+
+    # The current theme is named in current/theme.name, which is what
+    # `omarchy theme current` reads. Not the current/theme path: that is a
+    # staging directory theme-set *populates* with the files a theme is allowed
+    # to contribute, so it never moves and reads as success no matter what
+    # happened.
+    before = machine.succeed(user % "omarchy theme current").strip()
+
+    print(machine.succeed(
+        user % "omarchy theme install file:///srv/lumon 2>&1", timeout=300))
+
+    # Cloned where the CLI and the menu both look for user themes.
+    machine.succeed("test -f /home/omarchy/.config/omarchy/themes/lumon/colors.toml")
+
+    # And actually applied. `omarchy theme install` ends by calling
+    # omarchy-theme-set, so a clone that installed without applying would leave
+    # the desktop on tokyo-night and still look like success.
+    after = machine.succeed(user % "omarchy theme current").strip()
+    assert after != before, (
+        f"installing a theme did not change the current theme (still {after!r})")
+    assert "lumon" in after.lower(), (
+        f"the current theme is {after!r}, not the one just installed")
+    print(f"current theme moved from {before!r} to {after!r}")
+
+    # The wallpaper is the visible half, and the one that would break quietly:
+    # a theme's backgrounds live in the clone, not in the store, so this is the
+    # first thing in the whole session reading an image from outside /nix/store.
+    # Matched by filename against the clone's own backgrounds directory, not by
+    # looking for the theme's name in the path: the background resolves through
+    # current/theme/backgrounds, the staging directory, so the theme name never
+    # appears in it however well the install went.
+    paper = machine.succeed(
+        user % "readlink -f $HOME/.local/state/omarchy/current/background").strip()
+    machine.succeed(f"test -s {paper}")
+    machine.succeed(
+        "test -f /home/omarchy/.config/omarchy/themes/lumon/backgrounds/"
+        + paper.split("/")[-1])
+    print(f"wallpaper came from the cloned theme: {paper.split('/')[-1]}")
 
     # ---- what `omarchy version` reports -----------------------------------
     # It said "dev". Upstream reads the version from `pacman -Q omarchy` and

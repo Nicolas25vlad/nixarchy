@@ -156,6 +156,77 @@ else
   hmm "browser accent not set" "programs.nixarchy.browserThemeUser is off"
 fi
 
+# ---- what nixarchy patched, checked on the machine it matters on ---------
+# Every one of these was wrong at some point and none of them is visible in a
+# VM: the version comes from a package query, Plymouth only shows at boot, and
+# Vulkan needs a real GPU stack. They are the difference between "the build
+# succeeded" and "the desktop is right".
+head_ "Nixarchy fixes"
+
+# Guarded on the command being here at all. Run on a machine that has a
+# Wayland session but not nixarchy -- which is exactly what someone evaluating
+# this repo has -- an unguarded check reports "Vulkan present but not detected"
+# and blames the wrong thing for a command that is simply absent.
+if ! command -v omarchy >/dev/null 2>&1; then
+  hmm "Omarchy is not installed here" "nothing in this section to check"
+fi
+
+ver=$(timeout 5 omarchy version 2>/dev/null || true)
+if ! command -v omarchy >/dev/null 2>&1; then
+  : # already reported
+else
+  case "$ver" in
+    dev | dev\ *)
+      bad "omarchy version says '$ver'" "should be the packaged version"
+      say_dim "upstream falls back to a git-checkout branch when OMARCHY_PATH"
+      say_dim "is not /usr/share/omarchy, which on NixOS it never is"
+      ;;
+    "") bad "omarchy version said nothing" "" ;;
+    *) ok "omarchy version" "$ver" ;;
+  esac
+fi
+
+# The boot splash. Checked through plymouth's own config rather than the Nix
+# option, because what matters is what the running system will show.
+if ! command -v plymouth >/dev/null 2>&1; then
+  hmm "Plymouth not installed" "boot.plymouth.enable is off"
+else
+  theme=$( (grep -h '^Theme=' /etc/plymouth/plymouthd.conf 2>/dev/null |
+    head -1 | cut -d= -f2) || true)
+  case "$theme" in
+    omarchy) ok "boot splash is Omarchy's" "" ;;
+    "") hmm "no Plymouth theme configured" "boot.plymouth.theme is unset" ;;
+    *) hmm "boot splash is '$theme'" "not Omarchy's, which is fine if you chose it" ;;
+  esac
+fi
+
+# Only omarchy-voxtype-install reads this, but it read it wrong on every
+# machine: upstream looks in /usr/share/vulkan/icd.d, which NixOS does not use.
+if ! command -v omarchy-hw-vulkan >/dev/null 2>&1; then
+  : # reported above
+elif [ -d /run/opengl-driver/share/vulkan/icd.d ]; then
+  if omarchy-hw-vulkan 2>/dev/null; then
+    ok "Vulkan detected" "$( (find /run/opengl-driver/share/vulkan/icd.d -maxdepth 1 -name '*.json' 2>/dev/null | wc -l) || echo 0) ICD files"
+  else
+    bad "Vulkan present but not detected" "omarchy-hw-vulkan is looking in the wrong place"
+  fi
+else
+  hmm "no Vulkan ICDs on this machine" "hardware.graphics may be off"
+fi
+
+# The two runtime-installable things, both of which clone into ~/.config and
+# both of which fail on their first mkdir if that tree is a store symlink.
+for d in plugins themes; do
+  if [ -d "$HOME/.config/omarchy/$d" ] && [ -w "$HOME/.config/omarchy/$d" ]; then
+    ok "$HOME/.config/omarchy/$d writable" \
+      "$( (find "$HOME/.config/omarchy/$d" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/null | wc -l) || echo 0) installed"
+  elif [ -e "$HOME/.config/omarchy/$d" ]; then
+    bad "$HOME/.config/omarchy/$d not writable" "omarchy $d install cannot work"
+  else
+    hmm "$HOME/.config/omarchy/$d absent" "created on first use"
+  fi
+done
+
 # ---- the shell -----------------------------------------------------------
 head_ "Shell"
 if type tdl >/dev/null 2>&1 || command -v tdl >/dev/null 2>&1; then

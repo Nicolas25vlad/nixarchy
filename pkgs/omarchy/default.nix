@@ -559,6 +559,30 @@ stdenvNoCC.mkDerivation {
     # Without it SDDM falls back to its stock theme and the login screen is a
     # blue gradient with a placeholder avatar, which is the first thing anyone
     # sees of the system.
+    # The boot splash. Upstream ships a complete Plymouth theme -- the script,
+    # the logo and the progress assets -- and installs it with
+    # `sudo cp -r ... /usr/share/plymouth/themes/omarchy` from
+    # omarchy-refresh-plymouth. Nothing did that here, so boot.plymouth.enable
+    # came up with NixOS' default theme and the one place a user cannot miss
+    # was the one place that was not branded.
+    #
+    # NixOS collects themes from boot.plymouth.themePackages by looking in
+    # share/plymouth/themes, so putting it there is the whole of it.
+    install -d $out/share/plymouth/themes
+    cp -r ${src}/default/plymouth $out/share/plymouth/themes/omarchy
+    chmod -R u+w $out/share/plymouth/themes/omarchy
+
+    # The theme names its own directory twice, absolutely, and Plymouth reads
+    # those literally -- left alone it would look for the script under
+    # /usr/share and render nothing. NixOS copies themes into the initrd at a
+    # path of its own, so the reference has to be relative to wherever it lands
+    # rather than to the store.
+    substituteInPlace $out/share/plymouth/themes/omarchy/omarchy.plymouth \
+      --replace-fail 'ImageDir=/usr/share/plymouth/themes/omarchy' \
+      'ImageDir=/etc/plymouth/themes/omarchy' \
+      --replace-fail 'ScriptFile=/usr/share/plymouth/themes/omarchy/omarchy.script' \
+      'ScriptFile=/etc/plymouth/themes/omarchy/omarchy.script'
+
     install -d $out/share/sddm/themes
     cp -r ${src}/default/sddm/omarchy $out/share/sddm/themes/omarchy
     # cp from the store carries the store's read-only bits across, and the
