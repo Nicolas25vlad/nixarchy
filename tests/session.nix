@@ -555,6 +555,76 @@ pkgs.testers.runNixOSTest {
                "$HOME/.config/nixarchy/apps.nix")
     print("vim is offered by the selection, not selected, and already on PATH")
 
+    # ---- no shipped command still reaches into /usr -----------------------
+    # The sweep that found the version string, Vulkan detection, both app
+    # launchers and RetroArch's asset paths, kept as a check so the next one
+    # cannot creep back in unnoticed.
+    #
+    # Comment lines are stripped first. Several of these scripts explain in
+    # prose what upstream does with /usr, and matching those was what first
+    # made this scan accuse a file we had already rewritten.
+    #
+    # The exceptions are named rather than the check weakened: each is a
+    # command that only means anything on Arch, and each already refuses or
+    # explains itself when run here.
+    allowed = ["omarchy-upgrade-to-quattro", "omarchy-system-factory-reset",
+               "omarchy-migrate", "omarchy-plymouth-set",
+               "omarchy-refresh-plymouth", "omarchy-refresh-sddm",
+               "omarchy-provision-owner", "omarchy-provision-user",
+               "omarchy-apply-hardware", "omarchy-apply-system",
+               "omarchy-channel-set", "omarchy-channel-current",
+               "omarchy-dns", "omarchy-hibernation-setup",
+               "omarchy-toggle-hybrid-gpu", "omarchy-audio-tuning",
+               "omarchy-install-service-1password",
+               "omarchy-remove-service-1password",
+               "omarchy-remove-launcher-entry", "omarchy-remove-dev-env",
+               "omarchy-chromium-copy-url-host", "omarchy-chromium-ytdlp-host",
+               "omarchy-launch-docker-tui", "omarchy-hyprland-reload-guard",
+               "omarchy-setup-security-fingerprint", "omarchy-theme-set-vscode",
+               "omarchy-install-browser", "omarchy-install-ai-chatgpt",
+               "omarchy-install-gaming-lutris", "omarchy-install-service-signal",
+               "omarchy-install-service-spotify",
+               "omarchy-install-service-sunshine", "omarchy-plymouth-current",
+               "omarchy-dev-link", "omarchy-dev-pkg-test", "omarchy-dev-status",
+               "omarchy-dev-unlink",
+               # These four spell /usr/share/omarchy only as the default in
+               # a shell parameter expansion on OMARCHY_PATH, or compare against
+               # tell a packaged install from a checkout. OMARCHY_PATH is always
+               # set here, so the fallback is unreachable and the comparison
+               # always takes the branch it should.
+               "omarchy-version", "omarchy-version-branch",
+               "omarchy-update-dev", "omarchy-update-system-pkgs",
+               # fwupd's EFI capsule lives wherever the fwupd package puts it;
+               # on NixOS that is services.fwupd's business, not a path this
+               # repo should pin.
+               "omarchy-update-firmware"]
+    # The offender list comes back from one plain shell command and the
+    # filtering happens here. A first version did the allowlisting in shell
+    # too, with a grep -v -x -F against a generated list, and it matched
+    # nothing at all -- removing an entry from `allowed` did not fail the
+    # check, which is how a check that inspects nothing looks from outside.
+    offenders = machine.succeed(
+        # readlink -f already lands inside share/omarchy/bin, because bin/omarchy
+        # is a symlink to it. Appending ../share/omarchy/bin to that pointed at
+        # nothing, the cd failed, and the trailing `true` turned an empty
+        # result into a pass -- the check inspected zero files and said so to
+        # nobody.
+        "cd $(dirname $(readlink -f /run/current-system/sw/bin/omarchy)) && "
+        "for f in *; do "
+        "  grep -v '^[[:space:]]*#' \"$f\" 2>/dev/null "
+        "    | grep -q '/usr/' && basename \"$f\"; "
+        "done; true").split()
+    assert len(offenders) > 5, (
+        f"the /usr scan inspected almost nothing ({offenders}); it is looking "
+        "in the wrong directory again")
+    found = sorted(set(offenders) - set(allowed))
+    assert not found, (
+        "these shipped commands still reach into /usr in code: "
+        + " ".join(found)
+        + ". Either point them at what NixOS actually uses, or add them to the "
+        "named exceptions with a command that explains itself.")
+    print("no unexpected command reaches into /usr")
+
     # ---- launchers must look on PATH, not in /usr/bin ---------------------
     # Clicking Spotify offered to install Spotify. Both launchers decide
     # whether the app is present by testing `-x /usr/bin/<app>`, which is never

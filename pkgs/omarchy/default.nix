@@ -90,6 +90,8 @@
   imv,
   evince,
   libretro-core-info,
+  libretro-shaders-slang,
+  retroarch-joypad-autoconfig,
   localsend,
   runCommand,
   writeText,
@@ -426,7 +428,68 @@ stdenvNoCC.mkDerivation {
         substituteInPlace $out/share/omarchy/bin/omarchy-hw-vulkan \
           --replace-fail '/usr/share/vulkan/icd.d' '/run/opengl-driver/share/vulkan/icd.d'
 
-        # Clicking Spotify offered to install Spotify.
+        # RetroArch was configured to look in /usr/share/libretro for everything
+    # except its cores.
+    #
+    # The cores path was fixed long ago; the other eight settings this script
+    # writes into retroarch.cfg were not, so a RetroArch installed through the
+    # selection came up with no core descriptions, no shaders and no controller
+    # profiles -- each one a silent absence rather than an error.
+    #
+    # Three have real packages in nixpkgs and now point at them. The rest --
+    # overlays, the on-screen-keyboard overlays, and the three databases --
+    # have none, so they point into the user's own data directory instead of a
+    # directory that cannot exist. That is where RetroArch's own online updater
+    # downloads them to, which turns "permanently empty" into "empty until you
+    # fetch them".
+    substituteInPlace $out/share/omarchy/bin/omarchy-install-gaming-retroarch \
+      --replace-fail '"/usr/share/libretro/info"' \
+      '"${libretro-core-info}/share/retroarch/cores"' \
+      --replace-fail '"/usr/share/libretro/shaders/shaders_slang"' \
+      '"${libretro-shaders-slang}/share/libretro/shaders/shaders_slang"' \
+      --replace-fail '"/usr/share/libretro/autoconfig"' \
+      '"${retroarch-joypad-autoconfig}/share/libretro/autoconfig"' \
+      --replace-fail '"/usr/share/libretro/overlays/keyboards"' \
+      '"$HOME/.local/share/retroarch/overlays/keyboards"' \
+      --replace-fail '"/usr/share/libretro/overlays"' \
+      '"$HOME/.local/share/retroarch/overlays"' \
+      --replace-fail '"/usr/share/libretro/database/rdb"' \
+      '"$HOME/.local/share/retroarch/database/rdb"' \
+      --replace-fail '"/usr/share/libretro/database/cht"' \
+      '"$HOME/.local/share/retroarch/database/cht"' \
+      --replace-fail '"/usr/share/libretro/database/cursors"' \
+      '"$HOME/.local/share/retroarch/database/cursors"'
+
+    # One shader preset the loop above missed, named in full rather than under
+    # the directory it lives in.
+    substituteInPlace $out/share/omarchy/bin/omarchy-install-gaming-retroarch \
+      --replace-fail '/usr/share/libretro/shaders/shaders_slang/crt/crt-royale.slangp' \
+      '${libretro-shaders-slang}/share/libretro/shaders/shaders_slang/crt/crt-royale.slangp'
+
+    # "Restart to finish the update" was going to be the answer every time.
+    #
+    # Upstream decides whether the kernel changed by walking
+    # /usr/lib/modules/*/vmlinuz and asking pacman who owns each one. Here the
+    # glob matches nothing, so the loop never runs and kernel_updated keeps the
+    # `true` it was initialised with -- a reboot prompt after every update,
+    # whether or not anything needing one changed.
+    #
+    # NixOS answers this exactly rather than by inference: /run/booted-system
+    # is what is running and /run/current-system is what is activated, so the
+    # kernels differing is precisely "you are not running what you installed".
+    substituteInPlace $out/share/omarchy/bin/omarchy-update-restart \
+      --replace-fail 'for kernel in /usr/lib/modules/*/vmlinuz; do' \
+      'for kernel in /run/current-system/kernel; do' \
+      --replace-fail 'if [[ -f $kernel ]] && pacman -Qo "$kernel" &>/dev/null; then' \
+      'if [[ -e $kernel ]]; then
+      if [[ "$(readlink -f /run/booted-system/kernel)" == "$(readlink -f "$kernel")" ]]; then
+        kernel_updated=false
+      fi
+      continue
+    fi
+    if false; then'
+
+    # Clicking Spotify offered to install Spotify.
     #
     # Both launchers focus an existing window if there is one, and otherwise
     # decide whether the app is installed by testing `-x /usr/bin/<app>`. That
