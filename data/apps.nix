@@ -394,4 +394,116 @@
       omarchy-theme-set-obsidian writes it on every theme change.
     '';
   };
+
+  # ── Development environments ────────────────────────────────────────────
+  #
+  # Upstream installs these with `mise use --global <lang>@latest`, which
+  # fetches a prebuilt toolchain into ~/.local/share/mise. That is a poor fit
+  # twice over: nothing about it survives into the configuration, and mise's
+  # binaries are dynamically linked against paths NixOS does not have, so
+  # several of them will not execute at all.
+  #
+  # As selection entries they go through the same Install / Remove / Apply
+  # loop as every other app, and the compiler comes from the same nixpkgs the
+  # rest of the system does. mise is still installed and still works for
+  # anything not listed here.
+  go = {
+    menuId = "install.development.go";
+    label = "Go";
+    category = "Development";
+    attr = "go";
+    arch = "go";
+    note = "mise use --global go@latest downloads a toolchain outside Nix. This is nixpkgs' go, rebuilt with the system.";
+  };
+  rust = {
+    menuId = "install.development.rust";
+    label = "Rust";
+    category = "Development";
+    attr = "rustup";
+    arch = "rustup";
+    note = "rustup manages its own toolchains under ~/.rustup, the same as upstream. Use pkgs.cargo and pkgs.rustc instead if you would rather Nix pinned the compiler.";
+  };
+  nodejs = {
+    menuId = "install.development.javascript.node";
+    label = "Node.js";
+    category = "Development";
+    attr = "nodejs";
+    arch = "nodejs";
+    note = "mise' prebuilt Node is dynamically linked against paths NixOS does not have, so it often will not execute at all. This one does.";
+  };
+  bun = {
+    menuId = "install.development.javascript.bun";
+    label = "Bun";
+    category = "Development";
+    attr = "bun";
+    arch = "bun";
+  };
+  deno = {
+    menuId = "install.development.javascript.deno";
+    label = "Deno";
+    category = "Development";
+    attr = "deno";
+    arch = "deno";
+  };
+  java = {
+    menuId = "install.development.java";
+    label = "Java";
+    category = "Development";
+    attr = "jdk";
+    arch = "jdk-openjdk";
+  };
+  elixir = {
+    menuId = "install.development.elixir.elixir";
+    label = "Elixir";
+    category = "Development";
+    attr = "elixir";
+    arch = "elixir";
+  };
+  zig = {
+    menuId = "install.development.zig";
+    label = "Zig";
+    category = "Development";
+    attr = "zig";
+    arch = "zig";
+  };
+  clojure = {
+    menuId = "install.development.clojure";
+    label = "Clojure";
+    category = "Development";
+    attr = "clojure";
+    arch = "clojure";
+  };
+  scala = {
+    menuId = "install.development.scala";
+    label = "Scala";
+    category = "Development";
+    attr = "scala";
+    arch = "scala";
+  };
+  dotnet = {
+    menuId = "install.development.dotnet";
+    label = ".NET";
+    category = "Development";
+    attr = "dotnet-sdk";
+    arch = "dotnet-sdk";
+  };
+  python = {
+    menuId = "install.development.python";
+    label = "Python";
+    category = "Development";
+    attr = "python3";
+    arch = "python";
+    note = ''
+      Already on the system as a runtime dependency of Omarchy's own scripts,
+      so this row shows dim on a stock install. Select it to say so in your
+      configuration rather than relying on that.
+    '';
+  };
+  ocaml = {
+    menuId = "install.development.ocaml";
+    label = "OCaml";
+    category = "Development";
+    attr = "ocaml";
+    arch = "ocaml";
+  };
 }

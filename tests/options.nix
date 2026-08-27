@@ -104,6 +104,53 @@ let
     };
   };
 
+  # Every Install row upstream offers, checked against what the selection
+  # covers -- so a row added by an Omarchy bump cannot quietly go unmapped.
+  #
+  # The exceptions are listed rather than counted, because "how many are
+  # unmapped" is a number that drifts silently and "which ones, and why" is
+  # a decision someone made. Each of these is either not an application at
+  # all, or a known gap the README names.
+  # The menu file. Parsed in the builder rather than here: stripping JSONC
+  # comments with string functions in Nix got the indented ones wrong and fed
+  # builtins.fromJSON something that was still commented. Python has a parser;
+  # this file does not need a second one.
+  menuFile = "${(pkgs.extend inputs.self.overlays.default).omarchy}/share/omarchy/default/omarchy/omarchy-menu.jsonc";
+
+  mappedRows = pkgs.lib.mapAttrsToList (_: a: a.menuId) (
+    pkgs.lib.filterAttrs (_: a: a ? menuId) (import ../data/apps.nix)
+  );
+
+  # Rows that are actions rather than applications, plus the gaps the README
+  # names. Fonts go through omarchy-install-font and the Arch-name map; the
+  # four gaming rows and three frameworks are documented as needing a hand.
+  notApps = [
+    "install.aur"
+    "install.package"
+    "install.preinstalls"
+    "install.style.background"
+    "install.style.theme"
+    "install.tui"
+    "install.webapp"
+    "install.windows"
+    "install.service.chromium-account"
+    "install.style.font.bitstream"
+    "install.style.font.cascadia"
+    "install.style.font.fira"
+    "install.style.font.iosevka"
+    "install.style.font.meslo"
+    "install.style.font.victor"
+    "install.ai.ollama"
+    "install.gaming.battlenet"
+    "install.gaming.geforce-now"
+    "install.gaming.retro-launcher"
+    "install.gaming.xbox-cloud"
+    "install.development.docker-dbs"
+    "install.development.elixir.phoenix"
+    "install.development.php.laravel"
+    "install.development.rails"
+  ];
+
   broken = pkgs.lib.filterAttrs (_: c: !(c.on && !c.off)) cases;
 
   report = pkgs.lib.concatStringsSep "\n" (
@@ -112,18 +159,28 @@ let
     ) cases
   );
 in
-pkgs.runCommand "nixarchy-options" { inherit report; } (
-  if broken == { } then
-    ''
-      echo "$report"
-      echo "every option adds what it should and removes it again"
-      touch $out
-    ''
-  else
-    ''
-      echo "$report"
-      echo "these options do not take effect both ways: ${pkgs.lib.concatStringsSep " " (builtins.attrNames broken)}" >&2
-      echo "an option that cannot be turned off is not an option." >&2
-      exit 1
-    ''
-)
+pkgs.runCommand "nixarchy-options"
+  {
+    inherit report;
+    inherit menuFile;
+    mapped = pkgs.lib.concatStringsSep " " mappedRows;
+    notApps = pkgs.lib.concatStringsSep " " notApps;
+    nativeBuildInputs = [ pkgs.python3 ];
+  }
+  (
+    if broken == { } then
+      ''
+        echo "$report"
+        echo "every option adds what it should and removes it again"
+
+        python3 ${./coverage.py}
+        touch $out
+      ''
+    else
+      ''
+        echo "$report"
+        echo "these options do not take effect both ways: ${pkgs.lib.concatStringsSep " " (builtins.attrNames broken)}" >&2
+        echo "an option that cannot be turned off is not an option." >&2
+        exit 1
+      ''
+  )
