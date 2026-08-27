@@ -63,6 +63,21 @@ jobs:
           # catch a bin we replace drifting out of the CLI's index.
           result/bin/omarchy commands --check
 
+          # And that the README still quotes the number this reports. The
+          # bound above is a floor, so the figure in the README drifted from
+          # 438 to 429 across a source bump without anything noticing --
+          # a floor catches a catastrophe, not a stale sentence.
+          reported=$(result/bin/omarchy commands --check |
+            sed -n 's/.*(\([0-9]*\) commands).*/\1/p')
+          echo "omarchy commands --check reports: $reported"
+          for claim in $(grep -oE '[0-9]+ (shell commands|subcommands)' README.md |
+            grep -oE '^[0-9]+' | sort -u); do
+            if [ "$claim" != "$reported" ]; then
+              echo "README says $claim commands; the CLI reports $reported" >&2
+              exit 1
+            fi
+          done
+
       # The README quotes app counts in four places. They are derivable from
       # data/apps.nix, and they silently went stale twice -- once when an app
       # was added, once when RetroArch moved to being built here -- so derive

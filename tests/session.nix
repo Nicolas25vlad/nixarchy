@@ -575,6 +575,12 @@ pkgs.testers.runNixOSTest {
                "omarchy-channel-set", "omarchy-channel-current",
                "omarchy-dns", "omarchy-hibernation-setup",
                "omarchy-toggle-hybrid-gpu",
+               # Tries /usr/bin/omarchy-windows-vm as the first candidate for a
+               # trustworthy path to re-exec itself as root, then falls back to
+               # a PATH lookup. The first simply does not exist here and the
+               # loop moves on; the store path it finds instead is root-owned
+               # and mode 555, which is exactly what its own check demands.
+               "omarchy-windows-vm",
                "omarchy-remove-service-1password",
                "omarchy-remove-launcher-entry", "omarchy-remove-dev-env",
                "omarchy-chromium-copy-url-host", "omarchy-chromium-ytdlp-host",

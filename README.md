@@ -3,17 +3,23 @@
 [Omarchy](https://omarchy.org) vendored for NixOS — the whole desktop, with its
 menus rewired to Nix instead of pacman.
 
-Omarchy 4.x is not a dotfiles repo, it's an application: **438 shell commands**,
+Omarchy 4.x is not a dotfiles repo, it's an application: **429 shell commands**,
 a QuickShell desktop shell, 22 themes, and Hyprland configured through the Lua
 API introduced in 0.55. Nixarchy packages that tree as a derivation and replaces
 the parts that assume Arch, rather than reimplementing it in Nix.
 
 Tracking an upstream release is a source bump, not a re-port.
 
+What that buys you: the Install menu writes to a Nix config instead of running
+pacman, **52 applications** are selectable that way, plugins and themes still
+install from a git URL at runtime the way upstream intends, and every command
+that assumed `/usr` either points at what NixOS uses or says why it cannot.
+
 ![A tour of nixarchy: the greeter, the menus, themes and the app selection](docs/nixarchy-demo.gif)
 
-*Login through the branded greeter, the Omarchy menu, four themes, and an app
-selected and applied — captured from a real VM by `nix build .#demo`.*
+*Login through the branded greeter, the Omarchy menu, four themes, an app
+selected and applied, and a third-party plugin installed from a git URL into
+the running bar — captured from a real VM by `nix build .#demo`.*
 
 ![The Omarchy desktop on NixOS](docs/screenshots/00-desktop.jpg)
 
@@ -31,7 +37,7 @@ More in [`docs/screenshots/`](docs/screenshots).
 | | |
 |---|---|
 | Hyprland session, QuickShell bar, 22 themes | as upstream ships them |
-| `omarchy` CLI | all 427 subcommands, `omarchy commands --check` green |
+| `omarchy` CLI | all 429 subcommands, `omarchy commands --check` green |
 | **Install menu** | picks write to a Nix config, not pacman |
 | **Remove menu** | deselects apps, never touches your own config |
 | **Update menu** | `nix flake update` + `nixos-rebuild switch --flake` |
@@ -40,6 +46,9 @@ More in [`docs/screenshots/`](docs/screenshots).
 | Shell functions | bash and zsh source the chain; fish derives it from the same files |
 | RetroArch | 13 libretro cores, resolved from the store rather than `/usr/lib` |
 | **Plugins** | `omarchy plugin add <url>` works as upstream ships it, and `programs.nixarchy.plugins` pins one in your flake |
+| **Themes** | `omarchy theme install <url>` clones and applies a published theme at runtime |
+| 13 language toolchains | Go, Rust, Node, Bun, Deno, Java, Elixir, Zig, Clojure, Scala, .NET, OCaml, Python — from nixpkgs, not from `mise` |
+| Branded boot splash | Omarchy's Plymouth theme, selected by `boot.plymouth.theme` |
 
 ## Why vendoring
 
@@ -664,9 +673,19 @@ nix run .#vm                 # smoke test
 nix run .#update         # bump the pinned packages
 ```
 
-`checks.session` boots a machine, picks two apps through `nixarchy-app-enable`,
-checks the file still parses, checks a repeated pick is a no-op, and checks
-`nixarchy-apply` copies the selection into the flake.
+The six checks, and what each is for:
+
+| check | boots a VM | what it is for |
+| --- | --- | --- |
+| `session` | yes | the desktop itself — greeter, bar, themes, the Install loop, theme install, migrations, the `/usr` scan |
+| `plugin` | yes | `omarchy plugin add` from real repos, and `programs.nixarchy.plugins` |
+| `coexist` | yes | the Omarchy session beside somebody else's `hyprland.lua` |
+| `integration` | no — **builds** | the module onto a configuration that already exists |
+| `options` | no | every option both ways, plus menu coverage and menu commands |
+| `vm-toplevel` | no | the reference machine still builds |
+
+Only the first three boot a machine, so `nix build .#checks.x86_64-linux.options`
+is the quick one to run while editing `data/apps.nix`.
 
 ## Status
 
@@ -682,6 +701,11 @@ one of these runs in CI on each push.
 | The Install/Remove/Update menus | `checks.session` enables an app, applies it, and asserts the selection reached the flake |
 | Third-party plugins | `checks.plugin` runs `omarchy plugin add <url> --enable` for two published plugins, then asks the *running shell* whether it loaded them -- not the filesystem -- before disabling and removing both |
 | Plugins pinned in your configuration | `checks.plugin` installs one through `programs.nixarchy.plugins` as a store symlink and asserts the *shell* discovers and loads it, that `plugin add` refuses to double-install it, and that `plugin remove` unlinks it |
+| Themes installed from a git URL | `checks.session` runs `omarchy theme install` against a real published theme and asserts the desktop moved to it -- name, and a wallpaper that came out of the clone |
+| Nothing reaching into `/usr` | `checks.session` scans every shipped command for a `/usr` path in code, against a named list of the Arch-only ones that explain themselves |
+| Every Install row mapped | `checks.options` compares upstream's menu against `data/apps.nix` both ways -- a row added upstream that nobody maps fails, and so does one that no longer exists |
+| Every menu row's command existing | `checks.options` resolves all 129 `omarchy-*` commands the 323 rows name; a row whose command vanished draws normally and does nothing |
+| Migrations refusing to run | `checks.session` asserts `omarchy migrate` explains itself instead of running 86 Arch scripts that sudo into `/usr` |
 | The shell chain in bash, zsh and fish | asserted by running each shell and calling the functions, not by checking a file exists |
 | Compose keys, Bluetooth, UPower, the browser accent | asserted on the thing itself: the include resolves, the unit is enabled, the portal answers, the colour is the theme's |
 
@@ -716,6 +740,14 @@ someone would miss it:
    run as upstream's bash behind a wrapper.
 3. **Battle.net and GeForce NOW** need a hand each, named in their rows. The
    wine prefixes and Flatpaks behind them are not this repo's to own.
+4. **Rails, Laravel and Phoenix** are frameworks rather than packages, so they
+   are not in the selection: each wants a language plus a package manager
+   plus a generator, and the language halves *are* there. Their Install rows
+   answer with the nixpkgs names.
+5. **The boot splash cannot be re-themed at runtime.** Style > Unlock says so
+   rather than failing: the initrd is built from your configuration, so which
+   splash you get is decided at rebuild time. Everything else under Style
+   still follows the theme live.
 
 Known gaps in detail:
 

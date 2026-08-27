@@ -17,8 +17,21 @@
 # what the keybindings call anyway. The menu is the exception: it is a picture
 # of the menu that is wanted, so that one is opened for real.
 let
+  # A real published plugin, pinned, so the tour shows the plugin system
+  # working on something somebody actually wrote rather than a fixture.
+  barToggle = pkgs.fetchgit {
+    url = "https://github.com/r3mcos3/omarchy-bar-toggle.git";
+    rev = "586750d0fa902b8774d1559fff954da540742a1e";
+    hash = "sha256-K45Qwgdf+K943nPHxrgS0IE9slsno9uZjIkr3XnfVBM=";
+  };
+
   test = pkgs.testers.runNixOSTest {
     name = "nixarchy-demo";
+
+    # The greeter wait below reads the screen, and get_screen_text needs this.
+    # Without it the tour died on the first probe -- borrowed from
+    # tests/session.nix, which sets it, without noticing that it does.
+    enableOCR = true;
 
     nodes.machine = {
       imports = [
@@ -44,6 +57,22 @@ let
       # the selection into, and exits before it prints a word about it. Without
       # this the whole install flow was a no-op no matter what was on screen --
       # tests/session.nix has had this from the start and the demo did not.
+      # fetchgit hands over a plain directory with no .git, and the machine has
+      # no network, so the history is rebuilt here and cloned over file:// --
+      # a real transport in omarchy-git-url-check's allowlist.
+      system.activationScripts.pluginRepo = ''
+        if [ ! -d /srv/bar-toggle/.git ]; then
+          mkdir -p /srv/bar-toggle
+          cp -r --no-preserve=mode,ownership ${barToggle}/. /srv/bar-toggle/
+          cd /srv/bar-toggle
+          export HOME=/root
+          ${pkgs.git}/bin/git init -q -b main
+          ${pkgs.git}/bin/git -c user.email=t@t -c user.name=t add -A
+          ${pkgs.git}/bin/git -c user.email=t@t -c user.name=t commit -q -m plugin
+        fi
+        chmod -R a+rX /srv/bar-toggle
+      '';
+
       system.activationScripts.demoFlakeDir = ''
         mkdir -p /etc/nixos
         chmod 0777 /etc/nixos
@@ -136,7 +165,19 @@ let
       # ---- the greeter ---------------------------------------------------
       machine.wait_for_unit("display-manager.service")
       machine.wait_until_succeeds("loginctl list-sessions | grep -q greeter")
-      machine.sleep(8)
+      # Retried, not slept at. Eight seconds was a guess about how fast the
+      # machine is, and typing a password at a greeter that has not drawn yet
+      # sends it nowhere -- the same shape that failed the session check on a
+      # CI runner and the coexist check before that.
+      drawn = ""
+      for attempt in range(10):
+          machine.sleep(4)
+          machine.screenshot("greeter-probe")
+          drawn = machine.get_screen_text().strip()
+          print(f"  greeter attempt {attempt}: {drawn!r}")
+          if drawn:
+              break
+      assert drawn, "the greeter never drew anything in 40s"
       shot("greeter", hold=8)
 
       machine.send_chars("omarchy\n")
@@ -145,7 +186,11 @@ let
           " | grep -q 'Authentication for user .*omarchy.* successful'")
 
       # ---- the desktop ---------------------------------------------------
-      machine.wait_for_unit("user@1000.service")
+      # A generous timeout rather than the default: authentication succeeding
+      # and the user manager being up are separated by however long it takes
+      # this machine to start one, and the default expired on a workstation
+      # busy building something else.
+      machine.wait_for_unit("user@1000.service", timeout=180)
       # -f, matching the whole command line, not -x, matching the process name
       # exactly: on NixOS the running binary is a wrapper, so its name is not
       # literally "quickshell" and -x waits forever on a shell that is up and
@@ -303,6 +348,48 @@ let
           shot(label, hold=8)
           user(f"pkill -u omarchy -x {proc} || true", timeout=20)
           machine.sleep(4)
+
+      # ---- plugins --------------------------------------------------------
+      # The newest thing the desktop can do, and the one part of Omarchy that
+      # is deliberately imperative: a plugin is cloned at runtime and the
+      # running shell picks it up, with no rebuild anywhere.
+      #
+      # Shown as menu, then command, then result, because the result is a
+      # single icon appearing in the bar and would mean nothing on its own.
+      # Windows from the previous segment, closed through the compositor.
+      #
+      # `pkill -x` did not do it: nautilus and gnome-disks are D-Bus activated,
+      # so killing them brings them back, and three runs of this tour captured
+      # Files and Xournal sitting over the frame that was supposed to be a bar.
+      # hyprctl closes them for real, and it works here because user() exports
+      # HYPRLAND_INSTANCE_SIGNATURE.
+      for _ in range(3):
+          user("for a in $(hyprctl clients -j | jq -r '.[].address'); do "
+               "hyprctl dispatch closewindow address:$a; done || true", timeout=30)
+          machine.sleep(3)
+      left = user("hyprctl clients -j | jq -r 'length'", timeout=30).strip()
+      print(f"  windows still open: {left}")
+
+      # No menu screenshot here. Getting `omarchy-shell shell toggle` to open a
+      # named submenu through this file's su/shlex quoting failed three times --
+      # the probe reported "plugin menu open: False" and the tour screenshotted
+      # the desktop anyway. checks.plugin already captures that menu cleanly,
+      # and docs/screenshots/17-plugins-menu.jpg is that frame. What this tour
+      # is uniquely able to show is the install landing in a live bar.
+
+      # The bar before, so the frame after has something to be different from.
+      shot("plugin-bar-before", hold=6)
+
+      # OMARCHY_SHELL_IPC_TIMEOUT because two seconds is upstream's budget for
+      # a real desktop and this is a VM under emulation with software
+      # rendering -- the same wait that failed on a CI runner.
+      out = user("OMARCHY_SHELL_IPC_TIMEOUT=30s omarchy plugin add "
+                 "file:///srv/bar-toggle --enable --yes 2>&1", timeout=240)
+      print(out)
+      assert "Enabled remco.bar-toggle" in out, (
+          f"the plugin did not install, so the frame below shows nothing: {out!r}")
+      machine.sleep(8)
+      shot("plugin-bar-after", hold=12)
 
       # ---- what is installed ---------------------------------------------
       # Proof the tour ran against a real selection rather than a bare shell.
