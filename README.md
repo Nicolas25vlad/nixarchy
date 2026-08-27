@@ -96,6 +96,38 @@ Install ▸ Apply changes  →  nixos-rebuild switch --flake
 
 The notification is clickable and runs the rebuild.
 
+### Apps you already have
+
+The Install menu dims a row when the app is already there — whether it is in
+your selection, or you installed it yourself and nixarchy knows nothing about
+it. That second case is the one worth naming: an app in your own
+`environment.systemPackages` or `home.packages` used to be offered as though
+you had nothing, and taking the offer wrote a second declaration for something
+you already run.
+
+`nix run github:olafkfreund/nixarchy#doctor` reports the overlap before you
+install anything:
+
+```
+Omarchy apps you already have
+  15 of them, and nixarchy will not install a second copy:
+    Alacritty
+    Chrome
+    Firefox
+    ...
+```
+
+Both the report and the menu look for the same thing — the app's command on
+PATH — so what the doctor lists and what the menu dims agree. The command comes
+from nixpkgs' own `meta.mainProgram`, read at evaluation time without building
+anything, because the attribute name is wrong often enough to matter: `vscode`
+puts `code` on PATH and `obs-studio` puts `obs`.
+
+**Remove rows deliberately do not work this way.** They stay bound to the
+selection, because deselecting is the only removal nixarchy is allowed to
+perform. An app that arrived from your own configuration is not this menu's to
+take away.
+
 ### Why it isn't a package list
 
 Several of these are **not packages** on NixOS, and a flat `systemPackages`

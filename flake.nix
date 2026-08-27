@@ -172,7 +172,42 @@
             gawk
             coreutils
           ];
-          text = builtins.readFile ./pkgs/doctor.sh;
+          # @apps@ is the app-to-command table, generated here for the same
+          # reason the menu's is: the doctor has to answer "which of these do
+          # you already have" on a machine that has never had nixarchy, so it
+          # cannot ask the running system and cannot be handed a list by it.
+          #
+          # meta.mainProgram where nixpkgs states one -- it is right where the
+          # attribute name is wrong, and vscode putting `code` on PATH is not a
+          # guess anyone would make. tryEval because unfree packages throw at
+          # evaluation when allowUnfree is off.
+          text =
+            builtins.replaceStrings
+              [ "@apps@" ]
+              [
+                (
+                  let
+                    pkgs = pkgsFor.${system};
+                    apps = import ./data/apps.nix;
+                    usable = nixpkgs.lib.filterAttrs (_: a: !(a ? unavailable)) apps;
+                    binaryOf =
+                      name: app:
+                      let
+                        probe = builtins.tryEval (
+                          let
+                            p = nixpkgs.lib.attrByPath (nixpkgs.lib.splitString "." (app.attr or name)) null pkgs;
+                          in
+                          if p == null then null else (p.meta.mainProgram or null)
+                        );
+                      in
+                      if probe.success && probe.value != null then probe.value else name;
+                  in
+                  nixpkgs.lib.concatStringsSep "\n" (
+                    nixpkgs.lib.mapAttrsToList (n: a: "${binaryOf n a}\t${a.label or n}") usable
+                  )
+                )
+              ]
+              (builtins.readFile ./pkgs/doctor.sh);
         };
 
         # A screencast of a real session, plus the frames it was made from.

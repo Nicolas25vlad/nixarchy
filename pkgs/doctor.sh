@@ -217,6 +217,42 @@ for unit in docker.service NetworkManager.service; do
 done
 say ""
 
+# ---- what you already have -----------------------------------------------
+# The question nixarchy could not answer before: of the applications Omarchy
+# offers, which are already on this machine?
+#
+# It matters in both directions. Selecting one you already have writes a second
+# declaration for something your own configuration installs -- harmless in Nix,
+# but confusing, and the Install menu used to offer it as though you had
+# nothing. And a NixOS user evaluating this repo mostly wants to know how much
+# of it they would be adopting versus already running.
+#
+# Answered by looking for the command on PATH, which is the same evidence the
+# menu uses, so what this prints and what the menu dims agree. The table is
+# generated at build time from data/apps.nix.
+say "${bold}Omarchy apps you already have${off}"
+already=()
+while IFS=$'\t' read -r binary label; do
+  [ -n "$binary" ] || continue
+  if command -v "$binary" >/dev/null 2>&1; then
+    already+=("$label")
+  fi
+done <<'APPS'
+@apps@
+APPS
+
+if [ ${#already[@]} -gt 0 ]; then
+  say "  ${dim}${#already[@]} of them, and nixarchy will not install a second copy:${off}"
+  printf '    %s\n' "${already[@]}"
+  say ""
+  say "  ${dim}Their Install rows show dimmed rather than offering to add what you"
+  say "  already run. Selecting one anyway is allowed -- it just means nixarchy"
+  say "  manages it too, and your own declaration still wins.${off}"
+else
+  say "  ${dim}None of them, so nothing here overlaps with what you run today.${off}"
+fi
+say ""
+
 # ---- the snippet ---------------------------------------------------------
 say "${bold}Add this to your configuration${off}"
 say ""

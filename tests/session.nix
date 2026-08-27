@@ -108,6 +108,13 @@ pkgs.testers.runNixOSTest {
       cores = 4;
     };
 
+    # An app the user already has, installed the way a user would -- their own
+    # systemPackages, nothing to do with the app selection. This is the exact
+    # case the Install menu could not see: vim is in data/apps.nix, is not
+    # selected here, and is on PATH. Its row must draw dim rather than offering
+    # to install what is already there.
+    environment.systemPackages = [ pkgs.vim ];
+
     system.activationScripts.testFlakeDir = ''
       mkdir -p /etc/nixos
       chmod 0777 /etc/nixos
@@ -488,6 +495,65 @@ pkgs.testers.runNixOSTest {
     assert "already installed" in out, (
         "a font this system ships was reported missing -- fc-list is either "
         "not on PATH or the check is losing to SIGPIPE under pipefail")
+
+    # ---- the menu knows what is already installed -------------------------
+    # An Install row used to offer an app the machine already had. The row's
+    # `disabled` is a shell command the menu runs, so the invariant is
+    # checkable directly: for every app whose command is on PATH, that command
+    # must succeed -- meaning the row draws dim rather than offering to install
+    # what is already there.
+    #
+    # Driven off the generated menu rather than a list written here, so an app
+    # added to data/apps.nix is covered without touching this check.
+    # Written as an explicit list of unindented lines. A triple-quoted block
+    # with a hand-rolled dedent turned `print` into `t(` -- the lines did not
+    # all carry the same indent, so slicing a fixed number of characters off
+    # each one cut into the code.
+    probe = "\n".join([
+        "import json, re, shutil, subprocess",
+        "raw = open('/etc/nixarchy/omarchy-menu.jsonc').read()",
+        # str() rather than an empty-string literal: this whole probe lives
+        # inside a Nix indented string, which two apostrophes terminate --
+        # including two inside a comment, as this comment first proved.
+        "raw = re.sub(r'^\\s*//[^\\n]*(\\n|$)', str(), raw, flags=re.M)",
+        "raw = re.sub(r',(\\s*[}\\]])', r'\\1', raw)",
+        "rows = json.loads(raw)",
+        "bad = []",
+        "checked = 0",
+        "for key, row in rows.items():",
+        "    if not key.startswith('install.') or 'disabled' not in row:",
+        "        continue",
+        "    m = re.search(r'command -v (\\S+)', row['disabled'])",
+        "    if not m or shutil.which(m.group(1)) is None:",
+        "        continue",
+        "    checked += 1",
+        "    if subprocess.run(['bash', '-c', row['disabled']]).returncode != 0:",
+        "        bad.append(key)",
+        "print('CHECKED', checked)",
+        "print('BAD', ' '.join(bad))",
+    ])
+    machine.succeed(
+        "cat > /tmp/menuprobe.py <<'PYEOF'\n" + probe + "\nPYEOF")
+    out = machine.succeed(user % "python3 /tmp/menuprobe.py")
+    print(out.strip())
+    bad = [w for w in out.split("BAD", 1)[1].split()] if "BAD" in out else []
+    assert not bad, (
+        f"these Install rows offer an app that is already on PATH: {bad}")
+
+    # The count matters as much as the verdict. With nothing installed outside
+    # the selection this loop checks almost nothing and passes for that reason
+    # -- it read CHECKED 1 before the machine was given a vim of its own.
+    assert int(out.split("CHECKED", 1)[1].split()[0]) >= 2, (
+        "the menu probe found almost nothing on PATH to check, so its verdict "
+        "means almost nothing")
+
+    # And vim specifically, since it is the one this machine installs the way a
+    # user would -- through systemPackages, with the selection none the wiser.
+    machine.succeed(
+        user % "grep -q vim $HOME/.config/nixarchy/apps.nix && ! grep -qE "
+               "'^[[:space:]]*vim\\.enable[[:space:]]*=[[:space:]]*true' "
+               "$HOME/.config/nixarchy/apps.nix")
+    print("vim is offered by the selection, not selected, and already on PATH")
 
     # ---- launchers must look on PATH, not in /usr/bin ---------------------
     # Clicking Spotify offered to install Spotify. Both launchers decide

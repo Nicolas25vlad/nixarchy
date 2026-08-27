@@ -9,6 +9,31 @@ let
   cfg = config.programs.nixarchy;
   apps = import ../data/apps.nix;
 
+  # The command each app puts on PATH, so the menu can tell "you already have
+  # this" from "you have not installed it".
+  #
+  # meta.mainProgram rather than the attribute name: it is right where the two
+  # differ, and they differ often -- obs-studio puts `obs` on PATH, not
+  # `obs-studio`. It is metadata, so this reads it without building anything.
+  #
+  # tryEval because an unfree package throws at *evaluation* when allowUnfree
+  # is off, and spotify and obsidian are both unfree. Without it, adding this
+  # would have broken evaluation for everyone who has not opted into unfree --
+  # a far worse outcome than the dim row it is here to draw. Falling back to
+  # the app's own name is the same guess omarchy-pkg-present already makes.
+  appBinary =
+    name: app:
+    let
+      path = lib.splitString "." (app.attr or name);
+      probe = builtins.tryEval (
+        let
+          p = lib.attrByPath path null pkgs;
+        in
+        if p == null then null else (p.meta.mainProgram or null)
+      );
+    in
+    if probe.success && probe.value != null then probe.value else name;
+
   available = lib.filterAttrs (_: a: !(a ? unavailable)) apps;
   unavailable = lib.filterAttrs (_: a: a ? unavailable) apps;
 
@@ -258,7 +283,22 @@ let
             else
               {
                 action = "nixarchy-app-enable ${name}";
-                disabled = "grep -qE '^[[:space:]]*${name}\\.enable' $HOME/.config/nixarchy/apps.nix";
+                # Dim when the app is in the selection *or* already on PATH.
+                #
+                # The second half is the case nixarchy could not see before: an
+                # app the user installed themselves, in their own
+                # systemPackages or home.packages, which the selection knows
+                # nothing about. The row offered to install something they
+                # already had, and taking it would have written a second
+                # declaration for it.
+                #
+                # Remove rows deliberately do NOT gain this. They stay bound to
+                # the selection, because deselecting is the only removal
+                # nixarchy is allowed to perform -- an app that arrived from
+                # the user's own configuration is not this menu's to take away.
+                disabled =
+                  "grep -qE '^[[:space:]]*${name}\\.enable' $HOME/.config/nixarchy/apps.nix"
+                  + " || command -v ${appBinary name app} >/dev/null 2>&1";
                 description = "Enable in ~/.config/nixarchy/apps.nix, then Apply changes";
               }
           )
