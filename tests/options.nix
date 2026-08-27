@@ -78,6 +78,20 @@ let
           (configWith { preinstalls = false; }).environment.systemPackages;
     };
 
+    # preinstallsExclude is the per-application half of preinstalls, and the
+    # only removal path for an app the selection does not carry. Both ways:
+    # Pinta is there by default and gone when named.
+    preinstallsExclude = {
+      on =
+        !(builtins.any (p: (p.pname or "") == "Pinta")
+          (configWith { preinstallsExclude = [ "pinta" ]; }).environment.systemPackages
+        );
+      off =
+        !(builtins.any (p: (p.pname or "") == "Pinta")
+          (configWith { preinstallsExclude = [ ]; }).environment.systemPackages
+        );
+    };
+
     browserThemeUser = {
       # null is the default, so this one reads the other way round: the rules
       # appear when a user is named.

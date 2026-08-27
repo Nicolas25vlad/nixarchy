@@ -159,6 +159,24 @@ in
       '';
     };
 
+    preinstallsExclude = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "pinta" ];
+      description = ''
+        Preinstalled applications to leave out, by nixpkgs attribute name.
+
+        `preinstalls` is all-or-nothing, which is the one thing the Remove menu
+        cannot express: an app in the selection can be deselected on its own,
+        but the preinstalled set could only be taken away whole. This is the
+        per-application half of it -- the declarative equivalent of removing
+        one app rather than the group.
+
+        Names that match nothing are an error rather than a typo you find by
+        noticing the app is still installed.
+      '';
+    };
+
     shellIntegration = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -215,6 +233,41 @@ in
 
   config = lib.mkIf cfg.enable {
     assertions = [
+      {
+        # removeAttrs ignores a name that is not there, so a typo would leave
+        # the app installed and the user hunting for why. Named here instead.
+        assertion =
+          let
+            known = [
+              "pinta"
+              "libreoffice"
+              "xournalpp"
+              "obs-studio"
+              "moonlight-qt"
+              "kdenlive"
+              "gnome-disk-utility"
+              "sushi"
+            ];
+          in
+          lib.all (n: builtins.elem n known) cfg.preinstallsExclude;
+        message =
+          "programs.nixarchy.preinstallsExclude names something that is not a "
+          + "preinstalled application: "
+          + lib.concatStringsSep " " (
+            lib.subtractLists [
+              "pinta"
+              "libreoffice"
+              "xournalpp"
+              "obs-studio"
+              "moonlight-qt"
+              "kdenlive"
+              "gnome-disk-utility"
+              "sushi"
+            ] cfg.preinstallsExclude
+          )
+          + ". The set is: pinta libreoffice xournalpp obs-studio moonlight-qt "
+          + "kdenlive gnome-disk-utility sushi.";
+      }
       {
         assertion = config.programs.hyprland.package.version or "0" >= "0.55";
         message = ''
@@ -363,22 +416,28 @@ in
         bibata-cursors
       ])
       ++ lib.optionals cfg.preinstalls (
-        with pkgs;
-        [
-          # omarchy-install-preinstalls, minus the six that cannot be here.
-          pinta
-          libreoffice
-          xournalpp
-          obs-studio
-          moonlight-qt
-          kdePackages.kdenlive
+        # Filtered by attribute name rather than by pname: the name someone
+        # writes in preinstallsExclude is the one they would look up on
+        # search.nixos.org, and pname disagrees with it often enough to matter
+        # -- pinta's is "Pinta", capitalised.
+        lib.attrValues (
+          lib.removeAttrs {
+            # omarchy-install-preinstalls, minus the six that cannot be here.
+            inherit (pkgs)
+              pinta
+              libreoffice
+              xournalpp
+              obs-studio
+              moonlight-qt
+              ;
+            inherit (pkgs.kdePackages) kdenlive;
 
-          # install/omarchy-base.packages. The GUIs manual sends people to
-          # Disks for formatting and SMART, and sushi is what makes Space
-          # preview a file in Nautilus without opening it.
-          gnome-disk-utility
-          sushi
-        ]
+            # install/omarchy-base.packages. The GUIs manual sends people to
+            # Disks for formatting and SMART, and sushi is what makes Space
+            # preview a file in Nautilus without opening it.
+            inherit (pkgs) gnome-disk-utility sushi;
+          } cfg.preinstallsExclude
+        )
       );
     };
 

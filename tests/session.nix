@@ -489,6 +489,31 @@ pkgs.testers.runNixOSTest {
         "a font this system ships was reported missing -- fc-list is either "
         "not on PATH or the check is losing to SIGPIPE under pipefail")
 
+    # ---- migrations refuse to run -----------------------------------------
+    # The one finding in this sweep that could have done damage. Omarchy ships
+    # 86 migration scripts that bring an older Arch install forward -- 29 use
+    # sudo, 12 write under /usr, 8 call pacman -- and with no state directory
+    # every one of them counts as pending. `omarchy migrate` on a machine
+    # installed today would have run all 86 as root.
+    #
+    # Asserted on the command refusing, not on a pending count: the count is
+    # answered by the same replacement being tested, so it would agree with
+    # itself no matter what. What has to hold is that a person running this
+    # gets an explanation and a non-zero exit.
+    status, out = machine.execute(user % "omarchy migrate 2>&1")
+    assert status != 0, "omarchy migrate did not refuse to run"
+    assert "not how a NixOS install moves forward" in out, (
+        f"omarchy migrate ran or said something unexpected: {out!r}")
+    print("omarchy migrate refuses and says why")
+
+    # --pending still answers the way the bar asks, because nothing is pending
+    # -- a refusal where a caller expects a list would be a worse answer than
+    # the true one.
+    assert not machine.succeed(
+        user % "omarchy migrate --pending").strip(), (
+        "omarchy migrate --pending should be silent")
+    print("and --pending answers the bar honestly")
+
     # ---- installing a theme from a git URL --------------------------------
     # The sibling of `omarchy plugin add`, and it was the larger untested
     # surface: it clones a real repository into ~/.config/omarchy/themes at
