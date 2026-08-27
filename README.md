@@ -666,10 +666,20 @@ Nothing on the list below is waiting on a decision -- each is either
 impossible, or a tradeoff taken deliberately. In rough order of how much
 someone would miss it:
 
-1. **Upstream is pinned to one Omarchy release.** The drift guards are built
-   for a bump -- `--replace-fail` on every patched line, a menu cross-check, an
-   icon check, an app-count check -- but no one has actually taken one yet.
-   That is the next real piece of work.
+1. **Upstream is pinned to v4.0.1, which is the latest release.** There is no
+   bump to take: the tag is current, and Omarchy's default branch (`quattro`)
+   has *diverged* from it -- 98 commits ahead, 35 behind, with its own `version`
+   file still reading `4.0.0.alpha`. Moving to it would drop 35 commits of
+   release work, so the pin stays on the tag until a newer one exists.
+
+   The bump machinery has been exercised against that branch rather than left
+   untried. Every `--replace-fail` still matched across 98 commits and 300
+   changed files, `omarchy commands --check` passed at 441 commands, and
+   `vm-toplevel`, `options`, `integration` and `session` were all green. Two
+   checks -- `coexist` and `plugin`, the two that launch through the session's
+   own `.desktop` -- came up to a black desktop. That cause was not chased down,
+   because the answer did not depend on it and guessing at one would be worse
+   than saying so. The guards work; the branch is not somewhere to go.
 2. **fish's `ga` and `gd`** cannot change your directory, and never will: they
    run as upstream's bash behind a wrapper.
 3. **Battle.net and GeForce NOW** need a hand each, named in their rows. The
