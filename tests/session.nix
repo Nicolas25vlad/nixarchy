@@ -489,6 +489,28 @@ pkgs.testers.runNixOSTest {
         "a font this system ships was reported missing -- fc-list is either "
         "not on PATH or the check is losing to SIGPIPE under pipefail")
 
+    # ---- launchers must look on PATH, not in /usr/bin ---------------------
+    # Clicking Spotify offered to install Spotify. Both launchers decide
+    # whether the app is present by testing `-x /usr/bin/<app>`, which is never
+    # true on NixOS -- so someone with apps.spotify enabled got the install
+    # flow, with the real binary on their PATH the whole time.
+    #
+    # Asserted on the shipped script rather than by launching: the VM has the
+    # launchers but not the apps, and a `-x /usr/bin` test is wrong here
+    # whether or not anything is installed. A grep is the honest shape of the
+    # claim -- the bug was a hardcoded path, so the check is that the path is
+    # gone.
+    for launcher in ["spotify", "signal"]:
+        script = machine.succeed(
+            f"cat $(readlink -f /run/current-system/sw/bin/omarchy-launch-{launcher})")
+        assert "/usr/bin/" not in script, (
+            f"omarchy-launch-{launcher} still tests a /usr/bin path; on NixOS "
+            "that is never true and the menu offers to install an app the user "
+            "already has.")
+        assert "command -v" in script, (
+            f"omarchy-launch-{launcher} no longer looks the app up on PATH")
+    print("the Spotify and Signal launchers look on PATH")
+
     # ---- migrations refuse to run -----------------------------------------
     # The one finding in this sweep that could have done damage. Omarchy ships
     # 86 migration scripts that bring an older Arch install forward -- 29 use

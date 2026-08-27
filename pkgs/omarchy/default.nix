@@ -426,7 +426,31 @@ stdenvNoCC.mkDerivation {
         substituteInPlace $out/share/omarchy/bin/omarchy-hw-vulkan \
           --replace-fail '/usr/share/vulkan/icd.d' '/run/opengl-driver/share/vulkan/icd.d'
 
-        # The App Library's Remove, for an app that came from the store.
+        # Clicking Spotify offered to install Spotify.
+    #
+    # Both launchers focus an existing window if there is one, and otherwise
+    # decide whether the app is installed by testing `-x /usr/bin/<app>`. That
+    # is never true here -- nixpkgs puts them on PATH from the store -- so a
+    # user with programs.nixarchy.apps.spotify enabled clicked Spotify in the
+    # menu and got a terminal offering to install it, with the real Spotify one
+    # command away on their PATH the whole time.
+    #
+    # `command -v` rather than a store path, because the app comes from the
+    # user's own configuration and may be overridden, in a profile, or absent
+    # -- and absent is a case these scripts already handle correctly.
+    for app in spotify signal; do
+      case $app in
+        signal) binary=signal-desktop ;;
+        *) binary=$app ;;
+      esac
+      substituteInPlace $out/share/omarchy/bin/omarchy-launch-$app \
+        --replace-fail "[[ -x /usr/bin/$binary ]]" \
+        "command -v $binary >/dev/null 2>&1" \
+        --replace-fail "uwsm-app -- /usr/bin/$binary" \
+        "uwsm-app -- $binary"
+    done
+
+    # The App Library's Remove, for an app that came from the store.
         #
         # omarchy-remove-launcher-entry handles four cases that all work here --
         # web apps, TUI entries, a user's own .desktop, and flatpaks -- and a fifth
