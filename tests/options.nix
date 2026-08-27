@@ -163,6 +163,7 @@ pkgs.runCommand "nixarchy-options"
   {
     inherit report;
     inherit menuFile;
+    omarchyPath = "${(pkgs.extend inputs.self.overlays.default).omarchy}/share/omarchy";
     mapped = pkgs.lib.concatStringsSep " " mappedRows;
     notApps = pkgs.lib.concatStringsSep " " notApps;
     nativeBuildInputs = [ pkgs.python3 ];

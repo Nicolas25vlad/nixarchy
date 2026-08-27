@@ -42,3 +42,32 @@ if stale:
         + "\nAn Omarchy bump removed them; drop them here too."
     )
 print(f"all {len(rows)} Install rows are mapped or accounted for")
+
+# ---- every command a menu row names must exist ---------------------------
+# A row whose command is gone renders normally and does nothing when chosen,
+# which is the quietest way for an Omarchy bump to break the desktop.
+#
+# Two shapes are excluded because they are not invocations. `when:` guards can
+# name an *Arch package* -- install.editor.emacs tests
+# `omarchy-pkg-present omarchy-emacs`, which is a package, not a command. And
+# remove.webapp greps Exec= lines for `omarchy-webapp-handler`, which is a
+# pattern. Both were flagged the first time this ran, and both are fine.
+menu = json.loads(raw)
+have = set(os.listdir(os.path.join(os.environ["omarchyPath"], "bin")))
+not_invocations = {"omarchy-emacs", "omarchy-webapp-handler"}
+
+missing = {}
+for key, row in menu.items():
+    for field in ("action", "when", "disabled", "checked"):
+        for cmd in set(re.findall(r"\bomarchy-[a-z0-9-]+", str(row.get(field, "")))):
+            if cmd not in have and cmd not in not_invocations:
+                missing.setdefault(cmd, []).append(key)
+
+if missing:
+    sys.exit(
+        "these menu rows name a command that does not exist:\n  "
+        + "\n  ".join(f"{c} <- {' '.join(sorted(k))}" for c, k in sorted(missing.items()))
+        + "\nAn Omarchy bump removed or renamed it; the rows still draw and do "
+        "nothing when chosen."
+    )
+print(f"all {len(menu)} menu rows name commands that exist")
