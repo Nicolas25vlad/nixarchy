@@ -55,6 +55,34 @@ if [ -z "${WAYLAND_DISPLAY:-}" ]; then
 fi
 ok "Wayland session" "$WAYLAND_DISPLAY"
 
+# Whether this is an Omarchy session at all.
+#
+# Run on a machine that has a Wayland session but not nixarchy -- which is what
+# anyone evaluating this repo has, and what this host turned out to be, running
+# niri -- every Omarchy-specific check below is a failure by definition. It
+# reported "2 failed" and "a failure here is a real one" for a machine that had
+# simply never installed it, which is alarming and untrue.
+#
+# So the Omarchy-specific checks report as notes instead when it is absent. The
+# ones that do not depend on it -- Bluetooth, the portal, the cursor -- still
+# pass or fail on their own merits, because those are worth knowing either way.
+omarchy_here=1
+command -v omarchy >/dev/null 2>&1 || omarchy_here=0
+
+# Note rather than failure when Omarchy is not installed.
+maybe_bad() {
+  if [ "$omarchy_here" = "1" ]; then
+    bad "$1" "${2-}"
+  else
+    hmm "$1" "${2-}"
+  fi
+}
+
+if [ "$omarchy_here" = "0" ]; then
+  hmm "Omarchy is not installed here" "the checks below that need it will say so"
+  say_dim "This machine is running ${XDG_CURRENT_DESKTOP:-something else}."
+fi
+
 # `pgrep -x quickshell` first, then read that process's own command line.
 #
 # Two things make the obvious version wrong. DankMaterialShell is built on
@@ -74,9 +102,9 @@ done
 if [ -n "$omarchy_shell" ]; then
   ok "Omarchy shell running" "pid $omarchy_shell"
 elif pgrep -x quickshell >/dev/null 2>&1; then
-  bad "a quickshell is running, but not Omarchy's" "another shell owns this session"
+  maybe_bad "a quickshell is running, but not Omarchy's" "another shell owns this session"
 else
-  bad "Omarchy shell not running" "the bar is the thing most likely to be missing"
+  maybe_bad "Omarchy shell not running" "the bar is the thing most likely to be missing"
 fi
 
 # ---- graphics ------------------------------------------------------------
@@ -232,7 +260,7 @@ head_ "Shell"
 if type tdl >/dev/null 2>&1 || command -v tdl >/dev/null 2>&1; then
   ok "Omarchy's functions are here" "in ${SHELL##*/}"
 else
-  bad "Omarchy's functions are missing" "in ${SHELL##*/}"
+  maybe_bad "Omarchy's functions are missing" "in ${SHELL##*/}"
   say_dim "bash, zsh and fish are covered; anything else is not"
 fi
 
