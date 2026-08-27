@@ -462,6 +462,22 @@ pkgs.testers.runNixOSTest {
         "a font this system ships was reported missing -- fc-list is either "
         "not on PATH or the check is losing to SIGPIPE under pipefail")
 
+    # ---- what `omarchy version` reports -----------------------------------
+    # It said "dev". Upstream reads the version from `pacman -Q omarchy` and
+    # treats any OMARCHY_PATH that is not /usr/share/omarchy as a developer
+    # running from a git checkout -- which, on a store path with no .git, is
+    # every nixarchy machine.
+    #
+    # Checked here rather than trusted to the build patch because the value is
+    # user-visible: etc/fastfetch/config.jsonc calls this, so it is printed in
+    # every new terminal, and omarchy-snapshot and omarchy-channel-current read
+    # it too.
+    reported = machine.succeed(user % "omarchy version").strip()
+    assert reported == "${(pkgs.extend inputs.self.overlays.default).omarchy.version}", (
+        f"omarchy version reports {reported!r}, not the packaged version. "
+        "'dev' means it took upstream's git-checkout branch again.")
+    print(f"omarchy version reports {reported}")
+
     # ---- the doctor ------------------------------------------------------
     # `nix run .#doctor` is the first thing the README tells anyone to run, so
     # it is worth more than having been run once by hand on a workstation. This

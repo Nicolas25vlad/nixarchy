@@ -399,6 +399,33 @@ stdenvNoCC.mkDerivation {
         --replace-quiet '/usr/lib/libretro' '$(omarchy-retroarch-cores)'
     done
 
+    # `omarchy version` said "dev".
+    #
+    # Upstream reads the version from `pacman -Q omarchy`, and treats an
+    # OMARCHY_PATH that is not /usr/share/omarchy as a developer running from a
+    # git checkout -- printing "dev", or "dev (abc1234)" when it can read a
+    # commit. On nixarchy the path is always a store path and there is never a
+    # .git, so it took the developer branch every time and printed a bare
+    # "dev".
+    #
+    # That is not just cosmetic: etc/fastfetch/config.jsonc calls this, so the
+    # splash Omarchy prints in every new terminal reported the desktop as an
+    # unversioned dev checkout. omarchy-snapshot and omarchy-channel-current
+    # read it too.
+    substituteInPlace $out/share/omarchy/bin/omarchy-version \
+      --replace-fail 'hash=$(git -C "$omarchy_path" rev-parse --short HEAD 2>/dev/null || true)' \
+      'echo "${version}"; exit 0'
+
+    # Vulkan was never detected.
+    #
+    # Upstream looks in /usr/share/vulkan/icd.d, which does not exist on NixOS:
+    # the ICD manifests live under /run/opengl-driver, put there by
+    # hardware.graphics. So this answered "no Vulkan" on a machine with a dozen
+    # of them, and omarchy-voxtype-install -- the only caller -- took its
+    # no-Vulkan path on every machine.
+    substituteInPlace $out/share/omarchy/bin/omarchy-hw-vulkan \
+      --replace-fail '/usr/share/vulkan/icd.d' '/run/opengl-driver/share/vulkan/icd.d'
+
     # Replace the bins that drive pacman. These are not reachable through the
     # menu extension: the shell's bar widget and its "Update System"
     # notification call omarchy-update directly from QML, so overriding a menu
