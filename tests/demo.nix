@@ -363,12 +363,20 @@ let
       # Files and Xournal sitting over the frame that was supposed to be a bar.
       # hyprctl closes them for real, and it works here because user() exports
       # HYPRLAND_INSTANCE_SIGNATURE.
-      for _ in range(3):
-          user("for a in $(hyprctl clients -j | jq -r '.[].address'); do "
-               "hyprctl dispatch closewindow address:$a; done || true", timeout=30)
-          machine.sleep(3)
+      # omarchy-hyprland-window-close-all, which upstream ships for exactly
+      # this. Two hand-rolled attempts failed first: pkill -x cannot do it,
+      # because nautilus and gnome-disks are D-Bus activated and come straight
+      # back, and `hyprctl dispatch closewindow address:...` is the pre-0.55
+      # syntax -- Hyprland's Lua API wants
+      # hl.dsp.window.close({ window = "address:..." }), which is what this
+      # command sends.
+      user("omarchy-hyprland-window-close-all", timeout=60)
+      machine.sleep(4)
       left = user("hyprctl clients -j | jq -r 'length'", timeout=30).strip()
       print(f"  windows still open: {left}")
+      assert left == "0", (
+          f"{left} windows are still on screen; the plugin frames below would "
+          "be a picture of Files and Xournal rather than the bar")
 
       # No menu screenshot here. Getting `omarchy-shell shell toggle` to open a
       # named submenu through this file's su/shlex quoting failed three times --
