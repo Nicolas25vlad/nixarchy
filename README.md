@@ -39,6 +39,7 @@ More in [`docs/screenshots/`](docs/screenshots).
 | Learn menu | NixOS wiki, `search.nixos.org` packages and options |
 | Shell functions | bash and zsh source the chain; fish derives it from the same files |
 | RetroArch | 13 libretro cores, resolved from the store rather than `/usr/lib` |
+| **Plugins** | `omarchy plugin add <url>` works as upstream ships it, and `programs.nixarchy.plugins` pins one in your flake |
 
 ## Why vendoring
 
@@ -171,17 +172,29 @@ call the `omarchy-*` executables directly, not these functions.
 ### Plugins
 
 [Omarchy's plugin system](https://omarchy.org/manual/plugins/) works here
-unchanged, and it is the one part of the desktop that is deliberately *not*
-declarative:
+unchanged — the menu below is upstream's own, running on NixOS:
+
+![Setup > Plugins, with Enable, Disable, Add, Clone and Remove](docs/screenshots/17-plugins-menu.jpg)
+
+Two published third-party plugins, installed into that session and then turned
+off again. The top bar is the same bar in both strips — the teleprompter glyph
+beside the clock and the widget-toggle icon on the right are
+[omteleprompt](https://github.com/seyhunak/omteleprompt) and
+[omarchy-bar-toggle](https://github.com/r3mcos3/omarchy-bar-toggle):
+
+![The same bar with two plugins enabled, then disabled](docs/screenshots/18-plugins-bar.jpg)
+
+Both frames come out of `checks.plugin`, which installs those two plugins from
+their real repositories on every push and fails if the shell does not load
+them. Adding one is a command, not a rebuild:
 
 ```bash
 omarchy plugin add https://github.com/seyhunak/omteleprompt.git --enable
 ```
 
-Or from the menu, which is where most people will find it: **Setup → Plugins**
-has Add, Enable, Disable, Clone and Remove. Add opens a floating terminal and
-asks for the URL. Those rows are upstream's own — nixarchy adds none and, more
-to the point, takes none away: the menu you see is Omarchy's default with the
+Or from the menu above, which is where most people will find it. Add opens a
+floating terminal and asks for the URL. Those rows are upstream's own — nixarchy
+adds none and, more to the point, takes none away: the menu you see is Omarchy's default with the
 nixarchy extension merged over it by id, and that extension rewrites only the
 `install.*` and `remove.*` rows. The check asserts it never names a
 `setup.plugin.*` id, because an override that did would hide the row with no

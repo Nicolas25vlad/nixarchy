@@ -376,6 +376,55 @@ pkgs.testers.runNixOSTest {
     user("compgen -G \"$HOME/.config/omarchy/plugins/*/manifest.json\"")
     print("the Remove Plugin row shows itself while plugins are installed")
 
+    # ---- pictures for the README ------------------------------------------
+    # Captured here rather than in docs/capture-screenshots.sh because that
+    # one drives a real GL VM over ssh, and this is the only place where two
+    # third-party plugins are installed and enabled at once. Frames come from
+    # qemu's screendump, which needs no display backend -- the same reason
+    # tests/demo.nix uses it.
+    import subprocess
+
+    def avg(path):
+        out = subprocess.run(
+            ["${pkgs.imagemagick}/bin/magick", path, "-resize", "1x1",
+             "-format", "%[hex:u]", "info:"],
+            capture_output=True, text=True, check=True)
+        return tuple(int(out.stdout.strip()[i:i + 2], 16) for i in (0, 2, 4))
+
+    def shoot(name, tries=8):
+        """Screenshot, and refuse to keep a black one.
+
+        Every assertion in this file passed once while the screen was black,
+        which is how the wallpaper check in tests/session.nix came to exist.
+        A screenshot for the README is worse than useless if it is a black
+        rectangle, so the frame is retried until something is drawn.
+        """
+        for attempt in range(tries):
+            machine.sleep(4)
+            machine.screenshot(name)
+            r, g, b = avg(os.path.join(os.environ["out"], name + ".png"))
+            print(f"  {name} attempt {attempt}: #{r:02X}{g:02X}{b:02X}")
+            if r + g + b > 60:
+                return
+        raise AssertionError(
+            f"{name} came out black after {tries} tries; a screenshot of "
+            "nothing is not worth shipping")
+
+    import os
+
+    shoot("plugins-desktop")
+    print("captured the desktop with both plugins in the bar")
+
+    # The Setup > Plugins menu itself, opened the way capture-screenshots.sh
+    # opens one: the only menu IPC is toggle, so its state is observed rather
+    # than assumed.
+    user("omarchy-shell shell toggle omarchy.menu "
+         "'{\"menu\":\"setup.plugin\"}' || true")
+    shoot("plugins-menu")
+    print("captured the Setup > Plugins menu")
+    user("omarchy-shell shell toggle omarchy.menu "
+         "'{\"menu\":\"setup.plugin\"}' || true")
+
     # ---- and off again ----------------------------------------------------
     # An add that cannot be undone is half a feature, and remove is what a user
     # reaches for when a plugin misbehaves -- which, for arbitrary unsandboxed
@@ -387,6 +436,14 @@ pkgs.testers.runNixOSTest {
                 if q["enabled"] and q["id"] in {p["id"] for p in PLUGINS}]
     assert not still_on, f"disable left these enabled: {still_on}"
     print("disable works for both")
+
+    # The same frame again with both plugins off. Paired with plugins-desktop
+    # above this is what actually demonstrates a plugin: the bar loses the
+    # widgets. A single screenshot of a bar cannot show which icons came from
+    # a plugin, and captioning one as if it could would be a guess dressed up
+    # as evidence.
+    shoot("plugins-desktop-off")
+    print("captured the same bar with both plugins disabled")
 
     for p in PLUGINS:
         user(f"omarchy plugin remove {p['id']} --yes 2>&1 || true")
