@@ -12,6 +12,63 @@ inputs:
 let
   cfg = config.programs.nixarchy;
   omarchyPath = "${cfg.package}/share/omarchy";
+
+  # Each declared plugin, checked at build time against the schema the shell
+  # enforces, and carrying the id its own manifest claims.
+  #
+  # Validated with upstream's own omarchy-plugin-validate rather than a
+  # reimplementation of it here: that script exists precisely to refuse what
+  # the running shell would silently reject, and a second copy of those rules
+  # in Nix would drift from it at the first upstream bump. A plugin that would
+  # not load now fails the rebuild, with the reason, instead of being installed
+  # and doing nothing.
+  #
+  # The id comes out of manifest.json rather than the attribute name. It is
+  # what the shell, the menu and every omarchy-plugin-* command key on, and a
+  # directory named anything else would be a plugin the user cannot enable,
+  # disable or remove by the name they see on screen.
+  validatedPlugins = lib.mapAttrs (
+    name: plugin:
+    pkgs.runCommand "nixarchy-plugin-${name}"
+      {
+        nativeBuildInputs = [
+          pkgs.jq
+          pkgs.findutils
+        ];
+      }
+      ''
+        src=${plugin.src}
+        if [ ! -f "$src/manifest.json" ]; then
+          echo "programs.nixarchy.plugins.${name}: no manifest.json in $src." >&2
+          echo "An Omarchy plugin is a directory with a manifest.json at its root." >&2
+          exit 1
+        fi
+
+        # PATH so the script finds the tools it shells out to; OMARCHY_PATH
+        # because everything in bin/ resolves through it.
+        export OMARCHY_PATH=${omarchyPath}
+        export PATH=${
+          lib.makeBinPath [
+            pkgs.jq
+            pkgs.bash
+            pkgs.coreutils
+            pkgs.findutils
+            pkgs.gnugrep
+            pkgs.gnused
+          ]
+        }:$PATH
+        if ! ${omarchyPath}/bin/omarchy-plugin-validate "$src"; then
+          echo "" >&2
+          echo "programs.nixarchy.plugins.${name} would not load." >&2
+          exit 1
+        fi
+
+        id=$(jq -r '.id' "$src/manifest.json")
+        mkdir -p $out
+        echo -n "$id" > $out/id
+        ln -s "$src" $out/plugin
+      ''
+  ) cfg.plugins;
 in
 {
   options.programs.nixarchy = {
@@ -34,6 +91,57 @@ in
       type = lib.types.str;
       default = "tokyo-night";
       description = "Theme applied on first login only. Switchable at runtime afterwards.";
+    };
+
+    # Declares which plugins are *present*, and deliberately not which are on.
+    #
+    # Upstream already splits the two: a plugin's code lives in
+    # ~/.config/omarchy/plugins/<id>/, while whether it is enabled, and where
+    # it sits in the bar, is recorded separately in ~/.config/omarchy/shell.json
+    # by the running shell. Content and state are already different files, so
+    # the content can come from the store without freezing the state.
+    #
+    # Enablement is therefore left alone on purpose. Managing shell.json here
+    # would mean a plugin you turned off in Setup > Plugins came back at the
+    # next rebuild, which is the sort of thing that makes people stop using the
+    # menu. Declare the plugin, enable it once, and your choice persists.
+    plugins = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options.src = lib.mkOption {
+            type = lib.types.path;
+            description = ''
+              A directory containing the plugin's manifest.json -- a flake
+              input, a fetchgit, or a path in your own configuration.
+            '';
+          };
+        }
+      );
+      default = { };
+      example = lib.literalExpression ''
+        {
+          omteleprompt.src = pkgs.fetchgit {
+            url = "https://github.com/seyhunak/omteleprompt.git";
+            rev = "9a35865220a0c9d65132329e446a84c466545110";
+            hash = "sha256-KJM/AC1DnPwob40lo39Rlk9qkyKTI++bss1wPIcGsTs=";
+          };
+        }
+      '';
+      description = ''
+        Omarchy shell plugins to install declaratively.
+
+        Each is symlinked into ~/.config/omarchy/plugins under the id from its
+        own manifest.json, which is the name the shell and every omarchy-plugin-*
+        command already use. Validated at build time against the same schema the
+        shell enforces, so a broken manifest fails the rebuild rather than
+        quietly failing to load after you log in.
+
+        This installs a plugin; it does not enable it. Enable it once from
+        Setup > Plugins or with `omarchy plugin enable <id>` and that choice
+        persists, because the shell records it in shell.json rather than in the
+        plugin folder. `omarchy plugin add` still works alongside this for
+        anything you would rather not pin.
+      '';
     };
 
   };
@@ -155,6 +263,52 @@ in
           run ln -sfn /etc/nixarchy/omarchy-menu.jsonc \
             "${config.xdg.configHome}/omarchy/extensions/omarchy-menu.jsonc"
         fi
+
+        # Declared plugins, linked in by the id their manifest claims.
+        #
+        # A symlink rather than a copy, and that is a supported shape rather
+        # than a trick: upstream's scan globs "$dir"/*/ , which matches a
+        # symlink to a directory, and omarchy-plugin-remove has an explicit
+        # branch for one -- it offers to "Unlink" and prints where it pointed.
+        # Its picker globs -type d -o -type l for the same reason.
+        #
+        # Only links this module planted are cleaned up, tracked in a
+        # .nixarchy-managed file beside them. A plugin you added yourself with
+        # `omarchy plugin add` is a real directory that this never touches, so
+        # the two ways of installing one live side by side.
+        run mkdir -p "${config.xdg.configHome}/omarchy/plugins"
+        ${
+          let
+            dir = "${config.xdg.configHome}/omarchy/plugins";
+            manifest = "${dir}/.nixarchy-managed";
+          in
+          ''
+            # Remove links from a previous generation before planting this
+            # one's, so a plugin dropped from the configuration goes away.
+            # Guarded on being a symlink: if you replaced one with a real
+            # checkout, that is yours and is left alone.
+            if [ -e "${manifest}" ]; then
+              while IFS= read -r stale; do
+                [ -n "$stale" ] || continue
+                if [ -L "${dir}/$stale" ]; then
+                  run rm -f "${dir}/$stale"
+                fi
+              done < "${manifest}"
+            fi
+            run rm -f "${manifest}"
+            ${lib.concatMapStringsSep "
+" (drv: ''
+              id=$(cat ${drv}/id)
+              if [ -e "${dir}/$id" ] && [ ! -L "${dir}/$id" ]; then
+                echo "nixarchy: ${dir}/$id is your own directory, not replacing it"
+              else
+                run ln -sfn "$(readlink -f ${drv}/plugin)" "${dir}/$id"
+                echo "$id" >> "${manifest}"
+              fi
+            '') (lib.attrValues validatedPlugins)}
+            touch "${manifest}"
+          ''
+        }
 
         # The app selection. Seeded once and never touched again -- it holds
         # the user's picks, and clobbering it would silently undo them.

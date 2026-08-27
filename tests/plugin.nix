@@ -64,6 +64,11 @@ let
   '') plugins;
 
   pluginJSON = builtins.toJSON (map (p: { inherit (p) id name url; }) plugins);
+
+  # The same upstream repo the imperative flow clones, handed to the module as
+  # a path instead. Deliberately the *other* plugin from the one added first,
+  # so the two never race for the same id.
+  declarative = (builtins.elemAt plugins 1).src;
 in
 pkgs.testers.runNixOSTest {
   name = "nixarchy-plugin";
@@ -110,6 +115,12 @@ pkgs.testers.runNixOSTest {
       users.omarchy = {
         programs.nixarchy.enable = true;
         home.stateVersion = "25.05";
+
+        # The declarative half. Same plugin the imperative flow adds below,
+        # so the two paths can be compared directly -- except this one is
+        # never cloned, never touched by `plugin add`, and is a read-only
+        # store symlink rather than a git checkout.
+        programs.nixarchy.plugins.bar-toggle.src = declarative;
       };
     };
   };
@@ -202,6 +213,65 @@ pkgs.testers.runNixOSTest {
     # message. The seed uses cp -rn precisely so this is a real directory.
     user("test -w ~/.config/omarchy")
     print("~/.config/omarchy is writable, so plugins can be cloned into it")
+
+    # ---- the declarative half ---------------------------------------------
+    # programs.nixarchy.plugins installs a plugin from the store with no clone
+    # and no `plugin add`. What has to be true is not that a symlink exists --
+    # that is trivially checkable and proves nothing -- but that the running
+    # shell discovers and loads a plugin whose folder is a read-only store
+    # symlink rather than a git checkout.
+    #
+    # Upstream's scan globs "$dir"/*/ and tests -f "$sub/manifest.json", both
+    # of which follow a symlink, so this is a supported shape rather than
+    # something snuck past. This asserts that, because it is the assumption the
+    # whole option rests on.
+    decl_id = "remco.bar-toggle"
+    decl = f"/home/omarchy/.config/omarchy/plugins/{decl_id}"
+    machine.succeed(f"test -L {decl}")
+    machine.succeed(f"readlink {decl} | grep -q '^/nix/store/'")
+    print(f"{decl_id} is a store symlink, planted with no clone")
+
+    seen = json.loads(user("omarchy-plugin-list --json"))
+    assert any(q["id"] == decl_id for q in seen), (
+        f"the shell did not discover the declaratively installed {decl_id}. "
+        f"It listed: {sorted(q['id'] for q in seen)}")
+    print("and the shell discovered it anyway")
+
+    # Declared but not enabled, which is the deliberate half of the design:
+    # enablement lives in shell.json, and managing that from Nix would undo a
+    # choice made in Setup > Plugins at the next rebuild.
+    assert not [q for q in seen if q["id"] == decl_id and q["enabled"]], (
+        f"{decl_id} came up enabled. The option installs a plugin; enabling "
+        "it is runtime state the user owns.")
+    print("installed but not enabled -- the user's choice to make")
+
+    # Enabling it must work exactly as for any other plugin, and it is the one
+    # thing that would prove the store symlink is second-class if it did not.
+    user(f"omarchy plugin enable {decl_id}")
+    now = json.loads(user("omarchy-plugin-list --json"))
+    assert [q for q in now if q["id"] == decl_id and q["enabled"]], (
+        f"{decl_id} could not be enabled")
+    print("and it enables like any other plugin")
+
+    # The two mechanisms must not double-install. `plugin add` checks the id
+    # against everything already present, so the declared one is found and the
+    # clone is refused -- rather than landing a second copy of the same plugin
+    # under a temp directory.
+    status, out = user(
+        "omarchy plugin add file:///srv/bar-toggle --yes 2>&1", check=False)
+    assert status != 0 and "already" in out, (
+        "`omarchy plugin add` did not refuse a plugin whose id is already "
+        f"installed declaratively. It said: {out!r}")
+    print("`plugin add` refuses an id the configuration already provides")
+
+    # And removing it works, through upstream's own symlink branch -- the one
+    # that makes this design safe rather than a trick. It comes back at the
+    # next rebuild, which is what declaring it means.
+    out = user(f"omarchy plugin remove {decl_id} --yes 2>&1 || true")
+    assert "Unlinked" in out, (
+        f"remove did not take the symlink branch: {out!r}")
+    machine.succeed(f"test ! -e {decl}")
+    print("and `plugin remove` unlinks it rather than trying to delete /nix/store")
 
     # ---- add each plugin --------------------------------------------------
     for p in PLUGINS:

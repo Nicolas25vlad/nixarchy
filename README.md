@@ -207,6 +207,48 @@ real published plugins and then removes them again:
   something that isn't will fail silently inside a QML `Process`, so if one
   misbehaves, that is the first thing to look at.
 
+#### Declaring plugins in your configuration
+
+Plugins can also be pinned, so a machine rebuilt from your flake comes up with
+them already there:
+
+```nix
+programs.nixarchy.plugins.omteleprompt.src = pkgs.fetchgit {
+  url = "https://github.com/seyhunak/omteleprompt.git";
+  rev = "9a35865220a0c9d65132329e446a84c466545110";
+  hash = "sha256-KJM/AC1DnPwob40lo39Rlk9qkyKTI++bss1wPIcGsTs=";
+};
+```
+
+`src` is any directory with a `manifest.json` at its root — a `fetchgit`, a
+flake input, or a path in your own repo while you write one.
+
+This works because upstream already separates the two halves: a plugin's *code*
+lives in `~/.config/omarchy/plugins/<id>/`, while whether it is enabled and
+where it sits in the bar are recorded in `~/.config/omarchy/shell.json` by the
+running shell. So the code can come from the store — the directory is a symlink,
+which upstream's scan follows and `omarchy plugin remove` has an explicit branch
+for — without freezing anything the user changes at runtime.
+
+Three consequences worth knowing, all of them deliberate:
+
+- **It installs a plugin; it does not enable one.** Enable it once from
+  Setup → Plugins and that choice sticks, because it is recorded in
+  `shell.json` rather than in the plugin folder. Managing enablement from Nix
+  would mean a plugin you turned off came back at the next rebuild.
+- **The id comes from the plugin's own `manifest.json`**, not from the
+  attribute name. It is what the shell, the menu and every `omarchy-plugin-*`
+  command key on, so a folder named anything else would be a plugin you could
+  not enable or remove by the name on screen.
+- **A broken manifest fails the rebuild**, checked with upstream's own
+  `omarchy-plugin-validate` rather than a copy of its rules — so it cannot
+  drift at the next Omarchy bump. You find out at `nixos-rebuild` instead of
+  after logging in to a plugin that installed and does nothing.
+
+`omarchy plugin add` still works alongside this, and the two do not collide: a
+plugin you add by hand is a real directory this never touches, and adding one
+whose id you already declare is refused rather than installed twice.
+
 Plugins run unsandboxed inside your long-lived shell process. Upstream warns
 about this at the prompt and refuses `ext::`-style URLs that would run a command
 at clone time; both behaviours are intact here.
@@ -594,6 +636,7 @@ one of these runs in CI on each push.
 | The CLI | `omarchy commands --check`, plus a count the build refuses to let drift |
 | The Install/Remove/Update menus | `checks.session` enables an app, applies it, and asserts the selection reached the flake |
 | Third-party plugins | `checks.plugin` runs `omarchy plugin add <url> --enable` for two published plugins, then asks the *running shell* whether it loaded them -- not the filesystem -- before disabling and removing both |
+| Plugins pinned in your configuration | `checks.plugin` installs one through `programs.nixarchy.plugins` as a store symlink and asserts the *shell* discovers and loads it, that `plugin add` refuses to double-install it, and that `plugin remove` unlinks it |
 | The shell chain in bash, zsh and fish | asserted by running each shell and calling the functions, not by checking a file exists |
 | Compose keys, Bluetooth, UPower, the browser accent | asserted on the thing itself: the include resolves, the unit is enabled, the portal answers, the colour is the theme's |
 
@@ -638,13 +681,12 @@ Known gaps in detail:
   `services.flatpak.enable` and then `flatpak install flathub
   com.nvidia.geforcenow`. Their rows name both. Xbox Cloud Gaming needs
   nothing -- it is a web app, and never touches a package manager
-- Plugins are runtime state, not configuration. `omarchy plugin add` clones
-  into `~/.config/omarchy/plugins` and the running shell picks it up, so a
-  machine rebuilt from the same flake comes up without them. That is upstream's
-  design and nixarchy keeps it deliberately -- pinning a plugin in the flake
-  would turn trying one into a rebuild -- but it does mean plugins are the one
-  part of this desktop your flake does not describe. Back up that directory, or
-  re-add them by hand
+- Plugins added with `omarchy plugin add` are runtime state: they clone into
+  `~/.config/omarchy/plugins` and a machine rebuilt from the same flake comes
+  up without them. That is upstream's design and worth keeping, since pinning
+  every plugin would turn *trying* one into a rebuild. Pin the ones you want to
+  keep with `programs.nixarchy.plugins`; whether a plugin is *enabled* stays
+  runtime state either way, deliberately
 - Chromium's theme *accent* needs `programs.nixarchy.browserThemeUser`, which
   hands that user the browsers' policy directories. Chromium reads policy only
   from `/etc`, with no per-user equivalent, so this lets them set policy for
