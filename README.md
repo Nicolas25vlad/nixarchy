@@ -168,6 +168,40 @@ Left on, it loads from `/etc/bashrc` — *before* `~/.bashrc` — so anything yo
 define yourself still wins. Nothing in the desktop depends on it: the menus
 call the `omarchy-*` executables directly, not these functions.
 
+### Plugins
+
+[Omarchy's plugin system](https://omarchy.org/manual/plugins/) works here
+unchanged, and it is the one part of the desktop that is deliberately *not*
+declarative:
+
+```bash
+omarchy plugin add https://github.com/seyhunak/omteleprompt.git --enable
+```
+
+That clones into `~/.config/omarchy/plugins/` at runtime and the running shell
+picks it up — no rebuild, no flake edit, nothing added to `apps.nix`. It is
+upstream's design and nixarchy keeps it: a plugin is somebody's QML loaded into
+your bar, and pinning that in a flake would make trying one a five-minute
+round trip instead of a command.
+
+Two things make it work on NixOS that would otherwise be quiet failures, and
+both are covered by `nix build .#checks.x86_64-linux.plugin`, which installs two
+real published plugins and then removes them again:
+
+- **`~/.config/omarchy` is a real directory, not a store symlink.** Home Manager's
+  usual answer for a config file is a read-only link into `/nix/store`. The seed
+  uses `cp -rn` instead, so `plugin add` can write there at all.
+- **A plugin gets whatever `pkgs/omarchy/default.nix` declares, and nothing else.**
+  Plugins shell out to commands they assume are present — omteleprompt's voice
+  mode runs `python3`, `parecord` and `arecord`. On Arch those are just there.
+  Here they are on the list, and the check keeps them there. A plugin needing
+  something that isn't will fail silently inside a QML `Process`, so if one
+  misbehaves, that is the first thing to look at.
+
+Plugins run unsandboxed inside your long-lived shell process. Upstream warns
+about this at the prompt and refuses `ext::`-style URLs that would run a command
+at clone time; both behaviours are intact here.
+
 ### RetroArch cores
 
 `pkgs.retroarch` is `retroarch-with-cores` built with an **empty** core list,

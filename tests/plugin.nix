@@ -1,0 +1,261 @@
+{ inputs, pkgs }:
+# Adds real third-party plugins from real git repos, the way the manual says
+# to: `omarchy plugin add <url> --enable`.
+#
+# The plugin system is the one part of Omarchy that is deliberately imperative.
+# Everything else nixarchy touches is declared in a flake and built into the
+# store; plugins are cloned at runtime into ~/.config/omarchy/plugins and loaded
+# by the running shell. That is upstream's design, and the nixarchy-specific
+# question is whether it survives contact with a system whose config directory
+# is usually made of read-only store symlinks. The seed writes that tree with
+# `cp -rn --no-preserve=mode`, so it is a real writable directory -- and if that
+# ever changed, `plugin add` would die on its first mkdir.
+#
+# The repos are upstream's own, pinned by hash, and cloned over file:// because
+# a NixOS test machine has no network. file:// is a real entry in
+# omarchy-git-url-check's allowlist rather than a special case bolted on here,
+# and every step after the clone -- validate, the id-collision check, the rescan
+# IPC, enable -- is identical to what an https URL reaches. What file:// cannot
+# prove is that the scheme itself is accepted, so the https URLs are checked
+# against omarchy-git-url-check directly below: that is the only code in the
+# whole path that reads a scheme at all.
+let
+  # Two plugins rather than one, because a single sample cannot tell "plugins
+  # work" from "this plugin works". Both are bar-widgets, which is what third
+  # parties actually publish, and they differ in the ways the registry cares
+  # about: id shape (reverse-DNS against a short dotted name) and default
+  # section (center against right).
+  plugins = [
+    {
+      id = "io.github.seyhunakyurek.omteleprompt";
+      name = "omteleprompt";
+      url = "https://github.com/seyhunak/omteleprompt.git";
+      src = pkgs.fetchgit {
+        url = "https://github.com/seyhunak/omteleprompt.git";
+        rev = "9a35865220a0c9d65132329e446a84c466545110";
+        hash = "sha256-KJM/AC1DnPwob40lo39Rlk9qkyKTI++bss1wPIcGsTs=";
+      };
+    }
+    {
+      id = "remco.bar-toggle";
+      name = "bar-toggle";
+      url = "https://github.com/r3mcos3/omarchy-bar-toggle.git";
+      src = pkgs.fetchgit {
+        url = "https://github.com/r3mcos3/omarchy-bar-toggle.git";
+        rev = "586750d0fa902b8774d1559fff954da540742a1e";
+        hash = "sha256-K45Qwgdf+K943nPHxrgS0IE9slsno9uZjIkr3XnfVBM=";
+      };
+    }
+  ];
+
+  # fetchgit hands over a plain directory with no .git, so the history is
+  # rebuilt in the VM -- each plugin's own files, unmodified, at one commit.
+  makeRepos = pkgs.lib.concatMapStringsSep "\n" (p: ''
+    if [ ! -d /srv/${p.name}/.git ]; then
+      mkdir -p /srv/${p.name}
+      cp -r --no-preserve=mode,ownership ${p.src}/. /srv/${p.name}/
+      cd /srv/${p.name}
+      export HOME=/root
+      ${pkgs.git}/bin/git init -q -b main
+      ${pkgs.git}/bin/git -c user.email=t@t -c user.name=t add -A
+      ${pkgs.git}/bin/git -c user.email=t@t -c user.name=t commit -q -m ${p.name}
+    fi
+    chmod -R a+rX /srv/${p.name}
+  '') plugins;
+
+  pluginJSON = builtins.toJSON (map (p: { inherit (p) id name url; }) plugins);
+in
+pkgs.testers.runNixOSTest {
+  name = "nixarchy-plugin";
+
+  nodes.machine = {
+    imports = [
+      inputs.self.nixosModules.nixarchy
+      inputs.home-manager.nixosModules.home-manager
+    ];
+
+    programs.nixarchy = {
+      enable = true;
+      flake = "/etc/nixos";
+      displayManager = false;
+    };
+
+    boot.plymouth.enable = pkgs.lib.mkForce false;
+    environment.sessionVariables.WLR_RENDERER_ALLOW_SOFTWARE = "1";
+
+    services.getty.autologinUser = "omarchy";
+
+    users.users.omarchy = {
+      isNormalUser = true;
+      extraGroups = [
+        "wheel"
+        "video"
+        "input"
+      ];
+      password = "omarchy";
+    };
+    security.sudo.wheelNeedsPassword = false;
+
+    system.activationScripts.testFlakeDir = ''
+      mkdir -p /etc/nixos
+      chmod 0777 /etc/nixos
+    '';
+
+    system.activationScripts.pluginRepos = makeRepos;
+
+    home-manager = {
+      useGlobalPkgs = true;
+      useUserPackages = true;
+      sharedModules = [ inputs.self.homeManagerModules.nixarchy ];
+      users.omarchy = {
+        programs.nixarchy.enable = true;
+        home.stateVersion = "25.05";
+      };
+    };
+  };
+
+  testScript = ''
+    import json
+
+    PLUGINS = json.loads(r"""${pluginJSON}""")
+
+    machine.wait_for_unit("multi-user.target")
+    machine.wait_for_unit("user@1000.service")
+    machine.wait_until_succeeds("test -S /run/user/1000/bus")
+
+    # Bring the session up the way the greeter would, exactly as coexist does.
+    session = "/run/current-system/sw/share/wayland-sessions/omarchy.desktop"
+    exec = machine.succeed(f"sed -n 's/^Exec=//p' {session}").strip()
+    machine.succeed(
+        "systemd-run --uid=1000 --setenv=XDG_RUNTIME_DIR=/run/user/1000 "
+        "--setenv=WLR_RENDERER_ALLOW_SOFTWARE=1 --setenv=XDG_SESSION_TYPE=wayland "
+        "--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+        f"--unit=omarchy-session --collect {exec}")
+
+    # Probes go through a file rather than su -c '...'. Nested single quotes
+    # inside su -c have broken three separate probes in this repo already, and
+    # the jq filters these commands carry are full of them.
+    def user(script, timeout=120, check=True):
+        machine.succeed(
+            "cat > /tmp/probe.sh <<'PROBE_EOF'\n"
+            + "export XDG_RUNTIME_DIR=/run/user/1000\n"
+            + "export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\n"
+            + "export HYPRLAND_INSTANCE_SIGNATURE="
+            + "$(ls -t /run/user/1000/hypr 2>/dev/null | head -1)\n"
+            + script + "\nPROBE_EOF")
+        machine.succeed("chmod 0755 /tmp/probe.sh")
+        run = machine.succeed if check else machine.execute
+        return run("su omarchy -c 'bash /tmp/probe.sh'", timeout=timeout)
+
+    # Wait for the shell to answer IPC, not for a process to exist.
+    #
+    # `pgrep -f quickshell` was the obvious thing and is worthless here: the
+    # shell running the pgrep has "quickshell" in its own command line, so it
+    # matches itself and returns instantly. That is exactly what happened --
+    # the wait passed at once and `plugin add` then died on "omarchy-shell is
+    # not running", after cloning the plugin and printing "Added".
+    #
+    # `ping` is also the only probe that distinguishes a shell that is up from
+    # one that is still starting: upstream's omarchy-shell turns the
+    # "Not ready to accept queries yet" reply into a failure precisely because
+    # a starting shell answers stdout and exits 0.
+    machine.succeed(
+        "cat > /tmp/ping.sh <<'EOF'\n"
+        "export XDG_RUNTIME_DIR=/run/user/1000\n"
+        "export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\n"
+        "omarchy-shell shell ping\n"
+        "EOF")
+    machine.succeed("chmod 0755 /tmp/ping.sh")
+    machine.wait_until_succeeds("su omarchy -c 'bash /tmp/ping.sh'", timeout=240)
+    print("the shell answers IPC; plugin commands have something to talk to")
+
+    # ---- the scheme check, the one thing file:// cannot exercise -----------
+    # omarchy-git-url-check is what every URL meets first and the only code in
+    # the path that reads the scheme. Both directions, so a check that accepted
+    # everything would be caught.
+    for p in PLUGINS:
+        user(f"omarchy-git-url-check {p['url']}")
+        print(f"the https URL from the manual is accepted: {p['url']}")
+
+    status, _ = machine.execute(
+        "su omarchy -c 'omarchy-git-url-check ext::sh -c whoami'")
+    assert status != 0, (
+        "omarchy-git-url-check accepted an ext:: transport helper -- that URL "
+        "shape runs a shell command at clone time, before anything is "
+        "validated or enabled.")
+    print("a transport-helper URL is still refused")
+
+    # ---- the plugin directory has to be writable --------------------------
+    # The nixarchy-specific risk in the whole flow. Home-manager's usual answer
+    # for a config file is a read-only store symlink, and if ~/.config/omarchy
+    # were one, `plugin add` would die on its first mkdir with no useful
+    # message. The seed uses cp -rn precisely so this is a real directory.
+    user("test -w ~/.config/omarchy")
+    print("~/.config/omarchy is writable, so plugins can be cloned into it")
+
+    # ---- add each plugin --------------------------------------------------
+    for p in PLUGINS:
+        print(f"\n--- omarchy plugin add {p['url']} --enable ---")
+        print(user(
+            f"omarchy plugin add file:///srv/{p['name']} --enable --yes 2>&1",
+            timeout=240))
+
+        d = f"/home/omarchy/.config/omarchy/plugins/{p['id']}"
+        machine.succeed(f"test -f {d}/manifest.json")
+        machine.succeed(f"test -f {d}/BarWidget.qml")
+        print(f"cloned into {d}")
+
+    # ---- what the shell itself thinks -------------------------------------
+    # listPlugins is answered by the running quickshell, so this is the
+    # registry having actually loaded and accepted each manifest -- the thing
+    # a bare `test -f` on the clone cannot tell you.
+    listed = json.loads(user("omarchy-plugin-list --json"))
+    by_id = {p["id"]: p for p in listed}
+    for p in PLUGINS:
+        got = by_id.get(p["id"])
+        assert got, (
+            f"the shell does not know about {p['id']} after add --enable. "
+            f"It listed: {sorted(by_id)}")
+        assert got["enabled"], (
+            f"--enable did not enable {p['id']}; the shell reports it "
+            "discovered but off.")
+        print(f"shell reports {p['id']} enabled, kinds={got['kinds']}")
+
+    # ---- what a plugin can reach once it is loaded ------------------------
+    # The generic NixOS risk, and the reason this is a check rather than a
+    # note. A plugin is QML running inside the shell process, and it shells out
+    # to whatever it likes: omteleprompt's voice mode runs `python3 bin/vad.py`,
+    # which in turn runs `parecord` or falls back to `arecord`. On Arch all
+    # three are simply present. Here only what pkgs/omarchy/default.nix declares
+    # is on PATH, so a plugin that works everywhere else can be the one thing
+    # that does not work on nixarchy -- silently, since the failure is inside a
+    # QML Process the user never sees.
+    #
+    # All three are already declared. This is here so that stays true.
+    for cmd in ["python3", "parecord", "arecord"]:
+        status, _ = machine.execute(f"su omarchy -c 'command -v {cmd}'")
+        assert status == 0, (
+            f"'{cmd}' is not on a session PATH. omteleprompt's voice mode "
+            "shells out to it, and a plugin cannot add its own dependencies "
+            "-- it gets whatever pkgs/omarchy/default.nix declares.")
+    print("the commands omteleprompt shells out to all resolve")
+
+    # ---- and off again ----------------------------------------------------
+    # An add that cannot be undone is half a feature, and remove is what a user
+    # reaches for when a plugin misbehaves -- which, for arbitrary unsandboxed
+    # code running inside the shell process, is the case that matters.
+    for p in PLUGINS:
+        user(f"omarchy plugin disable {p['id']}")
+    off = json.loads(user("omarchy-plugin-list --json"))
+    still_on = [q["id"] for q in off
+                if q["enabled"] and q["id"] in {p["id"] for p in PLUGINS}]
+    assert not still_on, f"disable left these enabled: {still_on}"
+    print("disable works for both")
+
+    for p in PLUGINS:
+        user(f"omarchy plugin remove {p['id']} --yes 2>&1 || true")
+        machine.succeed(
+            f"test ! -d /home/omarchy/.config/omarchy/plugins/{p['id']}")
+    print("remove takes the directories away again")
+  '';
+}

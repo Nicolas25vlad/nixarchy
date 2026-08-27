@@ -150,7 +150,10 @@ let
       # exactly: on NixOS the running binary is a wrapper, so its name is not
       # literally "quickshell" and -x waits forever on a shell that is up and
       # logging happily. tests/session.nix uses the loose form for this reason.
-      machine.wait_until_succeeds("pgrep -f quickshell")
+      # -u 1000: run as root, `pgrep -f quickshell` matches the root shell
+      # running it, since the pattern is in that shell's own command line. It
+      # returned instantly and waited for nothing.
+      machine.wait_until_succeeds("pgrep -u 1000 -f quickshell")
 
       # Omarchy dims at 150s idle and locks at 300s, and this tour spends
       # minutes waiting for themes to settle without ever touching the

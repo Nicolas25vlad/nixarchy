@@ -111,8 +111,15 @@ pkgs.testers.runNixOSTest {
         f"--unit=omarchy-session --collect {exec}")
 
     # The compositor, then the shell it is supposed to start.
-    machine.wait_until_succeeds("pgrep -f Hyprland", timeout=120)
-    machine.wait_until_succeeds("pgrep -f quickshell", timeout=180)
+    # -u 1000, and not merely -f. `pgrep -f quickshell` run as root matches the
+    # root shell that is running the pgrep, because the pattern sits in that
+    # shell's own command line -- so it returns instantly and waits for
+    # nothing. Restricting it to the user the session belongs to is what makes
+    # it a wait. (This one was never load-bearing: the wallpaper delta below is
+    # what actually proves the desktop came up. tests/plugin.nix had the same
+    # line and there it mattered -- the plugin IPC ran before the shell was up.)
+    machine.wait_until_succeeds("pgrep -u 1000 -f Hyprland", timeout=120)
+    machine.wait_until_succeeds("pgrep -u 1000 -f quickshell", timeout=180)
     print("Hyprland and the Omarchy shell are running")
 
     # The proof that Omarchy's own config was loaded rather than the foreign

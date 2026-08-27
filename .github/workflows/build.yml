@@ -323,3 +323,11 @@ jobs:
         # .desktop, and the desktop asserted to render -- the arrangement the
         # README tells people with an existing Hyprland to use.
         run: nix build .#checks.x86_64-linux.coexist --print-build-logs
+
+      - name: Add third-party plugins from real repos
+        # `omarchy plugin add <url> --enable` for two published plugins, then
+        # disable and remove. The plugin system is the one deliberately
+        # imperative corner of Omarchy -- it clones into ~/.config at runtime
+        # -- so what this proves is that the seed leaves that directory
+        # writable and the shell's IPC is reachable.
+        run: nix build .#checks.x86_64-linux.plugin --print-build-logs

@@ -272,6 +272,15 @@
           pkgs = pkgsFor.${system};
         };
 
+        # Adds a real third-party plugin from a real repo. The plugin system
+        # is the one deliberately imperative corner of Omarchy, and the part
+        # of it that could break here is the writable ~/.config/omarchy the
+        # seed creates.
+        plugin = import ./tests/plugin.nix {
+          inherit inputs;
+          pkgs = pkgsFor.${system};
+        };
+
         vm-toplevel = self.nixosConfigurations.vm.config.system.build.toplevel;
       });
     };
