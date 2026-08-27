@@ -57,42 +57,86 @@ let
         };
       };
     };
+  built =
+    (inputs.nixpkgs.lib.nixosSystem {
+      inherit system;
+      modules = [
+        inputs.self.nixosModules.nixarchy
+        inputs.home-manager.nixosModules.home-manager
+        existing
+        {
+          programs.nixarchy = {
+            enable = true;
+            # greetd is already greeting; this is the other half of what the
+            # doctor prints for a machine like this.
+            displayManager = false;
+          };
+
+          home-manager = {
+            useGlobalPkgs = true;
+            useUserPackages = true;
+            sharedModules = [ inputs.self.homeManagerModules.nixarchy ];
+            users.tester = {
+              programs.nixarchy.enable = true;
+              home.stateVersion = "25.05";
+            };
+          };
+
+          users.users.tester = {
+            isNormalUser = true;
+            home = "/home/tester";
+          };
+
+          boot.loader.grub.device = "/dev/sda";
+          fileSystems."/" = {
+            device = "/dev/sda1";
+            fsType = "ext4";
+          };
+          system.stateVersion = "25.05";
+        }
+      ];
+    }).config;
+
+  # The Hyprland this configuration asked for, still the one on PATH.
+  #
+  # The omarchy package carries the compositor its Lua config is written
+  # against as a runtime dependency, and every runtime dependency went into
+  # environment.systemPackages -- so on a machine that already ran Hyprland,
+  # enabling nixarchy replaced the binary behind the user's *existing*
+  # sessions, and its share/wayland-sessions/hyprland.desktop won the buildEnv
+  # collision as well. Nothing failed; the compositor just quietly changed.
+  #
+  # This config mkForces nixpkgs' Hyprland, which is what the doctor tells
+  # people with their own to do, so the profile must contain that one.
+  ours = built.programs.hyprland.package;
+  profile = built.system.path;
 in
-(inputs.nixpkgs.lib.nixosSystem {
-  inherit system;
-  modules = [
-    inputs.self.nixosModules.nixarchy
-    inputs.home-manager.nixosModules.home-manager
-    existing
-    {
-      programs.nixarchy = {
-        enable = true;
-        # greetd is already greeting; this is the other half of what the
-        # doctor prints for a machine like this.
-        displayManager = false;
-      };
+pkgs.runCommand "nixarchy-integration"
+  {
+    toplevel = built.system.build.toplevel;
+    inherit profile;
+    wanted = ours.name;
+  }
+  ''
+    echo "configuration asked for: $wanted"
+    on_path=$(basename "$(readlink -f "$profile/bin/Hyprland")" | sed 's|/bin/Hyprland||')
+    got=$(readlink -f "$profile/bin/Hyprland" | sed 's|^/nix/store/[a-z0-9]*-||; s|/bin/Hyprland$||')
+    echo "on PATH:                 $got"
+    if [ "$got" != "$wanted" ]; then
+      echo "" >&2
+      echo "nixarchy replaced the Hyprland this configuration chose." >&2
+      echo "A machine that already runs Hyprland would find its own sessions" >&2
+      echo "started by a different compositor after enabling nixarchy." >&2
+      exit 1
+    fi
 
-      home-manager = {
-        useGlobalPkgs = true;
-        useUserPackages = true;
-        sharedModules = [ inputs.self.homeManagerModules.nixarchy ];
-        users.tester = {
-          programs.nixarchy.enable = true;
-          home.stateVersion = "25.05";
-        };
-      };
+    session=$(readlink "$profile/share/wayland-sessions/hyprland.desktop" || true)
+    case "$session" in
+      *"$wanted"*) ;;
+      "") echo "no hyprland.desktop in the profile" >&2; exit 1 ;;
+      *) echo "hyprland.desktop points at $session, not $wanted" >&2; exit 1 ;;
+    esac
 
-      users.users.tester = {
-        isNormalUser = true;
-        home = "/home/tester";
-      };
-
-      boot.loader.grub.device = "/dev/sda";
-      fileSystems."/" = {
-        device = "/dev/sda1";
-        fsType = "ext4";
-      };
-      system.stateVersion = "25.05";
-    }
-  ];
-}).config.system.build.toplevel
+    echo "the configuration's own Hyprland survived, sessions included"
+    touch $out
+  ''

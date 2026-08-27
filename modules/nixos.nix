@@ -381,7 +381,24 @@ in
       systemPackages = [
         cfg.package
       ]
-      ++ cfg.package.passthru.runtimeDeps
+      # Minus Hyprland itself.
+      #
+      # The package carries the compositor its Lua config is written against as
+      # a runtime dependency, and putting that in systemPackages made it the
+      # Hyprland on PATH -- so on a machine that already ran Hyprland, enabling
+      # nixarchy silently swapped the compositor behind the user's *existing*
+      # sessions. Its share/wayland-sessions/hyprland.desktop won the buildEnv
+      # collision too, so `hyprland.desktop` pointed at nixarchy's build rather
+      # than theirs. Found by building this against a real configuration; the
+      # doctor tells people to keep their own Hyprland, and this quietly did
+      # the opposite.
+      #
+      # programs.hyprland already puts the right one on PATH -- ours when
+      # nixarchy sets the option, theirs when they mkForce it -- so dropping it
+      # here changes nothing on a clean machine and stops overriding anyone
+      # else's. omarchy-session still runs the Lua config through
+      # config.programs.hyprland.package, which is the same binary either way.
+      ++ builtins.filter (d: !(lib.hasPrefix "hyprland-" (d.name or ""))) cfg.package.passthru.runtimeDeps
       # sessionPackages alone does not populate
       # /run/current-system/sw/share/wayland-sessions, and that is where greetd
       # greeters actually look -- so the session package goes here as well.
