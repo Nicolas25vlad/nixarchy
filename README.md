@@ -258,6 +258,20 @@ Then, in order:
 5. **Log out and pick "Omarchy"** at your greeter. If you already have a
    Hyprland config, this is the step that matters -- see below.
 
+### After it is installed
+
+```sh
+nix run github:olafkfreund/nixarchy#verify
+```
+
+From inside a running Omarchy session. Everything this repo checks in CI runs
+in a machine with no GPU, no Bluetooth radio, no network and no sound -- which
+catches a great deal and cannot answer whether the compositor got hardware
+acceleration, whether bluetoothd sees an adapter, or whether the RetroArch
+cores landed where RetroArch looks. This asks those, and prints what it found
+rather than a verdict: `llvmpipe` and `AMD Radeon` are both a pass to a script
+and mean opposite things to a person.
+
 ### If you already have a `~/.config/hypr/hyprland.lua`
 
 Nixarchy never overwrites a file you own, so Omarchy's own `hyprland.lua` is

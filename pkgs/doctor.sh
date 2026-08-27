@@ -166,6 +166,32 @@ fi
 # Unit names as systemd spells them, not lowercased: NetworkManager.service is
 # capitalised, and lowercasing it returned not-found -- which this reported as
 # "NetworkManager is off here" on a machine where it was enabled.
+# ---- what a laptop or a shared machine will want to know ----------------
+say "${bold}Worth turning on${off}"
+if [ -d /sys/class/bluetooth ] && [ -n "$(ls -A /sys/class/bluetooth 2>/dev/null)" ]; then
+  finding "This machine has Bluetooth" "$ok" "nixarchy enables the service"
+else
+  say "  ${dim}No Bluetooth radio here; nixarchy enables the service anyway,"
+  say "  which costs nothing on a machine without one.${off}"
+fi
+
+say "  ${dim}programs.nixarchy.browserThemeUser = \"$USER\" tints Chromium with"
+say "  the current theme. Off by default: it hands that user the browsers'"
+say "  policy directories, which on a shared machine is policy for everyone."
+say "  Light and dark already follow the theme without it.${off}"
+
+case "${SHELL##*/}" in
+  bash | zsh | fish)
+    finding "Omarchy's shell chain covers ${SHELL##*/}" "$ok" ""
+    ;;
+  *)
+    finding "Your shell is ${SHELL##*/}" "$warn" ""
+    say "     The chain reaches bash, zsh and fish. You would keep the menus"
+    say "     and the desktop, and lose the aliases and functions."
+    ;;
+esac
+say ""
+
 for unit in docker.service NetworkManager.service; do
   if ! systemctl is-enabled "$unit" >/dev/null 2>&1; then
     say "  ${dim}${unit%.service} is off here; nixarchy defaults it on but defers to you.${off}"

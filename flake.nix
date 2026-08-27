@@ -141,6 +141,24 @@
         default = self.packages.${system}.omarchy;
         inherit (pkgsFor.${system}) omarchy;
 
+        # `nix run github:olafkfreund/nixarchy#verify`, from inside a running
+        # Omarchy session. Everything in checks/ runs in a machine with no GPU,
+        # no Bluetooth radio, no network and no sound; this asks the questions
+        # that leaves unanswered.
+        verify = pkgsFor.${system}.writeShellApplication {
+          name = "nixarchy-verify";
+          runtimeInputs = with pkgsFor.${system}; [
+            systemd
+            gnugrep
+            gnused
+            coreutils
+            findutils
+            glib
+            bluez
+          ];
+          text = builtins.readFile ./pkgs/verify.sh;
+        };
+
         # `nix run github:olafkfreund/nixarchy#doctor` -- reads the running
         # system and prints the configuration it would need. Runnable before
         # nixarchy is an input anywhere, which is the only entry point someone
@@ -235,6 +253,13 @@
         # Boots the Omarchy session on a machine whose hyprland.lua belongs to
         # somebody else -- the case the session entry exists for.
         coexist = import ./tests/coexist.nix {
+          inherit inputs;
+          pkgs = pkgsFor.${system};
+        };
+
+        # Every option that adds something, checked with it turned off too --
+        # see tests/options.nix for why that half is the one at risk.
+        options = import ./tests/options.nix {
           inherit inputs;
           pkgs = pkgsFor.${system};
         };
