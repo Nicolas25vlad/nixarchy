@@ -773,6 +773,30 @@ stdenvNoCC.mkDerivation {
             # is translated and everything is derived from the same bash instead.
             install -Dm644 ${./fish-rc} $out/share/omarchy/default/fish/rc
 
+            # Make the shell rc files say where they actually are.
+            #
+            # All three open with a fallback to /usr/share/omarchy for when
+            # OMARCHY_PATH is unset. On NixOS that path can never exist, so any
+            # context that sources one of these without the variable already
+            # set -- a systemd unit, a container, ssh with a restricted
+            # environment -- gets
+            #
+            #   no such file or directory: /usr/share/omarchy/default/bash/envs
+            #
+            # and none of the aliases or functions. It works today only because
+            # environment.sessionVariables puts OMARCHY_PATH in
+            # /etc/set-environment and the login path reads that first, which
+            # is a lot of machinery for a file that already knows where it
+            # lives: it is installed here, at a path this build knows.
+            #
+            # So the fallback becomes that path. Nothing else changes -- an
+            # OMARCHY_PATH that is already set still wins, which is what makes
+            # `omarchy dev link` work.
+            for rc in bash zsh fish; do
+              substituteInPlace $out/share/omarchy/default/$rc/rc \
+                --replace-fail /usr/share/omarchy $out/share/omarchy
+            done
+
             # Wear the name. Omarchy's logo is a pixel font on a 15-unit grid and
             # logo.png is logo.svg rendered 800px wide and tinted, so "NIXARCHY" can be
             # built from the same source: ARCHY is upstream's own five glyphs moved

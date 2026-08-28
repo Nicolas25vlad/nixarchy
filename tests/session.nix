@@ -555,6 +555,42 @@ pkgs.testers.runNixOSTest {
                "$HOME/.config/nixarchy/apps.nix")
     print("vim is offered by the selection, not selected, and already on PATH")
 
+    # ---- the shell rc files know where they live --------------------------
+    # All three opened with a fallback to /usr/share/omarchy for when
+    # OMARCHY_PATH is unset, which on NixOS can never exist. Anything sourcing
+    # one without the variable already set -- a systemd unit, a container, ssh
+    # with a restricted environment -- got
+    #
+    #   no such file or directory: /usr/share/omarchy/default/bash/envs
+    #
+    # and none of the aliases or functions. It worked from a login only because
+    # environment.sessionVariables puts OMARCHY_PATH in /etc/set-environment
+    # and the login path reads that first.
+    #
+    # Tested with the variable explicitly unset, because that is the case that
+    # was broken; sourcing it from a normal login proves nothing here.
+    # Written to a file rather than quoted inline: this needs a shell command
+    # inside a Python string inside a Nix indented string, and hand-quoting
+    # that produced an empty result the first time -- which the check then
+    # reported as the fallback being wrong.
+    machine.succeed(
+        "cat > /tmp/rcprobe.sh <<'RCEOF'\n"
+        # dirname twice, not a parameter expansion: this file is a Nix
+        # indented string and a dollar-brace is interpolated even inside a
+        # quoted shell fragment.
+        "root=$(dirname $(dirname $(readlink -f /run/current-system/sw/bin/omarchy)))\n"
+        "unset OMARCHY_PATH\n"
+        ". \"$root/default/$1/rc\" >/dev/null 2>&1\n"
+        "echo \"$OMARCHY_PATH\"\n"
+        "RCEOF")
+    for shell in ["bash", "zsh"]:
+        out = machine.succeed(
+            f"env -i PATH=/run/current-system/sw/bin {shell} /tmp/rcprobe.sh {shell}"
+        ).strip()
+        assert out.startswith("/nix/store/"), (
+            f"the {shell} rc fell back to a path that cannot exist here: {out!r}")
+    print("the bash and zsh rc files locate themselves with no environment")
+
     # ---- no shipped command still reaches into /usr -----------------------
     # The sweep that found the version string, Vulkan detection, both app
     # launchers and RetroArch's asset paths, kept as a check so the next one
