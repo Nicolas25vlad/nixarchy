@@ -337,7 +337,16 @@ in
                 echo "$id" >> "${manifest}"
               fi
             '') (lib.attrValues validatedPlugins)}
-            touch "${manifest}"
+            # Only when this module actually planted something. The file
+            # exists to remember which links to clean up next time, and
+            # creating it for a user who declares no plugins leaves an empty
+            # file sitting in their plugins directory meaning nothing --
+            # noticed on a real machine, where it was the only thing in there.
+            if [ -s "${manifest}" ]; then
+              :
+            else
+              run rm -f "${manifest}"
+            fi
           ''
         }
 
