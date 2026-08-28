@@ -232,6 +232,19 @@ in
             "$src"/. "$dest"/ 2>/dev/null || true
         }
 
+        # One shipped default, under a name of our choosing. A plain `cp -n` is
+        # not enough on its own: the sources are store paths, and a branding
+        # file that lands r--r--r-- is one the user cannot edit, which is the
+        # entire point of the two of them.
+        seed_file() {
+          local src="$1" dest="$2"
+          [ -f "$src" ] || return 0
+          if [ ! -e "$dest" ]; then
+            run mkdir -p "$(dirname "$dest")"
+            run ${pkgs.coreutils}/bin/cp --no-preserve=mode,ownership "$src" "$dest"
+          fi
+        }
+
         # Report what was kept rather than replaced. Without this the seed is
         # silent about the one case that matters -- a hyprland.lua owned by
         # something else, which leaves Omarchy's session files unread.
@@ -280,11 +293,52 @@ in
 
         run mkdir -p "${config.home.homeDirectory}/.local/state/omarchy/current"
 
+        # The Hyprland toggles tree, and deliberately only flags.lua out of it.
+        #
+        # These flags are state, not config: a flag is *on* because its file is
+        # there, so copying all of default/hypr/toggles would bring the session
+        # up with no window gaps and every single window forced square.
+        # omarchy-hyprland-toggle copies the other two out of $OMARCHY_PATH the
+        # moment you ask for one, so nothing is lost by leaving them there --
+        # upstream's own omarchy-refresh-hyprland seeds exactly this one file.
+        #
+        # flags.lua is what makes the directory exist, and it has to exist
+        # before the shell starts rather than before the first toggle: the bar
+        # watches ~/.local/state/omarchy/toggles with a FileView to notice
+        # bar-off appearing, and a watch on a directory that is not there never
+        # fires. Hiding the bar wrote the flag and changed nothing on screen
+        # until the shell was restarted.
+        seed_file "${omarchyPath}/default/hypr/toggles/flags.lua" \
+          "${config.home.homeDirectory}/.local/state/omarchy/toggles/hypr/flags.lua"
+
+        # tensaku's shipped default. Nothing reads it yet -- tensaku-edit, the
+        # screenshot editor omarchy-capture-screenshot reaches for, is not
+        # packaged here -- but it is one of the files upstream's /etc/skel
+        # plants, and seeding it now means packaging tensaku later does not need
+        # a second pass over $HOME.
+        seed_dir "${omarchyPath}/default/tensaku" \
+          "${config.home.homeDirectory}/.local/state/tensaku"
+
         # omarchy-branding-screensaver writes straight into this directory and
         # never creates it, so editing the screensaver text failed with
         # "E212: Can't open file for writing". Upstream's config skeleton does
         # not ship it either.
         run mkdir -p "${config.xdg.configHome}/omarchy/branding"
+
+        # And the two files that belong in it, which upstream seeds from
+        # /etc/skel. Without them the About window opens with an empty logo
+        # column -- fastfetch's config sources about.txt as its logo -- and the
+        # screensaver dies on the spot, because omarchy-screensaver hands
+        # screensaver.txt to ttfx as the art to animate.
+        #
+        # The same two sources `omarchy branding <about|screensaver> reset`
+        # copies back, so a reset returns to exactly what was seeded. logo.txt
+        # is this repo's NIXARCHY banner rather than upstream's, by the same
+        # reasoning as the menu's snowflake.
+        seed_file "${omarchyPath}/icon.txt" \
+          "${config.xdg.configHome}/omarchy/branding/about.txt"
+        seed_file "${omarchyPath}/logo.txt" \
+          "${config.xdg.configHome}/omarchy/branding/screensaver.txt"
 
         # The menu extension is generated, not seeded: it carries the
         # install-row rewrites, so it has to keep tracking the package. Add

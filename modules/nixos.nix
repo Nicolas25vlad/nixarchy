@@ -31,6 +31,12 @@ let
       --config ${cfg.package}/share/omarchy/config/hypr/hyprland.lua
   '';
 
+  # Whether fcitx5 is the input method actually in force, which is both what
+  # the unit below can start and what the environment variables would be true
+  # about. Read back out of the option rather than assumed, because the
+  # defaults this module sets for it are mkDefault.
+  usingFcitx5 = config.i18n.inputMethod.enable && config.i18n.inputMethod.type == "fcitx5";
+
   # providedSessions has to match the .desktop basename or NixOS refuses it.
   omarchySession =
     (pkgs.writeTextFile {
@@ -117,8 +123,33 @@ in
       '';
     };
 
+    user = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "alice";
+      description = ''
+        The user who runs the desktop.
+
+        Set this and nixarchy can do the few things that need to name someone.
+        Today that is the `input` group: upstream's installer runs
+        `usermod -aG input`, and without it the dictation tools and game
+        controllers Omarchy offers cannot read their devices. There is no way
+        to infer it -- a NixOS machine has many users and the module cannot
+        guess which one logs into Omarchy -- so leaving this unset simply skips
+        that step rather than picking someone.
+
+        `browserThemeUser` defaults to this, so a single-user desktop can name
+        itself once. That option stays separate because it hands out the
+        browsers' policy directories, which is a decision worth making
+        deliberately rather than inheriting.
+      '';
+    };
+
     browserThemeUser = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
+      # Not `cfg.user`: naming the desktop user should not silently hand them
+      # the browsers' policy directories. See the description below for why
+      # that is a decision to make on purpose.
       default = null;
       example = "alice";
       description = ''
@@ -573,6 +604,23 @@ in
       # daemon it does not fail -- it silently concludes you are on AC and
       # never switches to power-saver.
       upower.enable = lib.mkDefault true;
+
+      # etc/systemd/logind.conf.d/, both files.
+      logind.settings.Login = {
+        # Omarchy binds the power button to its own power menu. NixOS' default
+        # of "poweroff" got there first, so the button shut the machine down
+        # and the menu was unreachable.
+        HandlePowerKey = lib.mkDefault "ignore";
+
+        # omarchy-sleep-lock holds a delay inhibitor while the shell secures
+        # the screen, and a delay inhibitor is a timer rather than a promise:
+        # logind suspends anyway when it expires. Upstream's own comment says
+        # five seconds -- logind's default -- is not enough when closing the
+        # lid also reconfigures displays, because Quickshell waits for the
+        # screen set to settle before it can secure. This costs nothing when
+        # locking works; a healthy lock releases in well under a second.
+        InhibitDelayMaxSec = lib.mkDefault 15;
+      };
     };
 
     # An Omarchy entry of its own in wayland-sessions. Without it the only way
@@ -584,24 +632,6 @@ in
     # not bind for any other name, which silently breaks ScreenCast and
     # Screenshot inside the session.
     services.displayManager.sessionPackages = lib.mkIf cfg.session [ omarchySession ];
-
-    # omarchy-theme-set-browser writes {"BrowserThemeColor": ...} into each
-    # browser's policy directory on every theme switch, and skips any that
-    # does not exist -- which on NixOS is all of them, so the accent silently
-    # never applied. Creating them is all that is needed; the script is
-    # upstream's and works unchanged once it has somewhere to write.
-    systemd.tmpfiles.rules = lib.mkIf (cfg.browserThemeUser != null) (
-      map (dir: "d ${dir} 0755 ${cfg.browserThemeUser} users - -") [
-        "/etc/chromium/policies"
-        "/etc/chromium/policies/managed"
-        "/etc/opt/chrome/policies"
-        "/etc/opt/chrome/policies/managed"
-        "/etc/opt/edge/policies"
-        "/etc/opt/edge/policies/managed"
-        "/etc/brave/policies"
-        "/etc/brave/policies/managed"
-      ]
-    );
 
     # The anchor ~/.XCompose includes. That file is written once at first
     # login and never rewritten, so it cannot name a store path: this one is
@@ -628,8 +658,242 @@ in
       networkmanager.enable = lib.mkDefault true;
     };
 
-    # install/config/lockscreen-pam.sh
-    security.pam.services.hyprlock = { };
+    # install/config/lockscreen-pam.sh, whose one line is `omarchy-apply-lock`
+    # -- and that writes /etc/pam.d/omarchy-lock-password. Omarchy 4's lock
+    # screen is the Quickshell one, which names that stack itself
+    # (shell/plugins/lock/Service.qml: `config: "omarchy-lock-password"`), and
+    # watches the file's existence to decide whether locking is possible at
+    # all. hyprlock appears nowhere in the tree except omarchy-upgrade-to-
+    # quattro, which *removes* it -- so what was declared here was PAM for a
+    # program the desktop no longer runs. On a live session:
+    #
+    #   /etc/pam.d/omarchy-lock-password  ->  No such file or directory
+    #   omarchy-shell lock lock           ->  missing-pam, screen stayed up
+    #
+    # Five paths reach that no-op: SUPER + CTRL + L, Menu > System > Lock, the
+    # idle timeout, lid close, and suspend.
+    #
+    # An empty attrset is the whole fix. NixOS' generated stack is pam_unix
+    # auth plus an account section, which is upstream's file with faillock and
+    # pam_systemd_home taken out. faillock is deliberately not reproduced:
+    # NixOS' only handle on it is `logFailures`, which emits pam_faillock with
+    # no preauth/authfail/authsucc arguments, so nothing ever resets the
+    # counter -- three bad unlocks would lock a user out of their own screen
+    # for good. Upstream's deny=10 needs the raw `rules` interface, and a
+    # lockout is a worse failure than the logging it would buy.
+    security.pam.services = {
+      omarchy-lock-password = { };
+    }
+    # Upstream writes omarchy-lock-fingerprint only when fprintd-list reports
+    # enrolled fingers, and the shell gates on that same pair (the file plus
+    # fprintd-list). optionalAttrs rather than mkIf because mkIf on an
+    # attrsOf entry still defines the service, and the service NixOS would
+    # then generate with fprintAuth false is a pam_unix stack -- a
+    # "fingerprint" method that silently waits for a password nothing asks for.
+    // lib.optionalAttrs config.services.fprintd.enable {
+      # pam_fprintd alone, as upstream: fprintAuth already defaults to
+      # services.fprintd.enable, and unixAuth off keeps the fingerprint stack
+      # from falling back to a password prompt the lock screen never renders.
+      omarchy-lock-fingerprint.unixAuth = false;
+    };
+
+    systemd = {
+      # omarchy-theme-set-browser writes {"BrowserThemeColor": ...} into each
+      # browser's policy directory on every theme switch, and skips any that
+      # does not exist -- which on NixOS is all of them, so the accent silently
+      # never applied. Creating them is all that is needed; the script is
+      # upstream's and works unchanged once it has somewhere to write.
+      tmpfiles.rules = lib.mkIf (cfg.browserThemeUser != null) (
+        map (dir: "d ${dir} 0755 ${cfg.browserThemeUser} users - -") [
+          "/etc/chromium/policies"
+          "/etc/chromium/policies/managed"
+          "/etc/opt/chrome/policies"
+          "/etc/opt/chrome/policies/managed"
+          "/etc/opt/edge/policies"
+          "/etc/opt/edge/policies/managed"
+          "/etc/brave/policies"
+          "/etc/brave/policies/managed"
+        ]
+      );
+
+      # $OMARCHY_PATH/default/systemd/user/, which upstream installs into
+      # /usr/lib/systemd/user and nothing here installed anywhere -- that
+      # directory is not a systemd search path. `systemctl --user status
+      # bt-agent.service` answered "could not be found" on a live session, and
+      # with it went the pairing agent, the crash watcher, the input method, the
+      # internal-monitor recovery, and -- the one that matters -- the sleep lock,
+      # so suspend did not lock even once the PAM stack above exists.
+      #
+      # Declared here rather than linked out of the package, because every
+      # shipped ExecStart is a /usr/bin path that resolves to nothing on NixOS
+      # and the package is not this module's to patch. The bodies are upstream's:
+      # same conditions, same ordering, same restart policy, binaries named by
+      # store path.
+      #
+      # omarchy-migrate-notify and omarchy-tailscale-receive are deliberately
+      # absent. Their conditions (ConditionPathIsDirectory=/usr/share/omarchy/
+      # migrations, ConditionPathExists=/usr/bin/tailscale) can never hold here,
+      # and both jobs belong elsewhere on NixOS: migrations arrive with a
+      # rebuild, and Taildrop with services.tailscale.
+      #
+      # Each omarchy-* unit gets /run/current-system/sw on its PATH. NixOS gives
+      # every unit a stub PATH of coreutils, findutils, grep, sed and systemd,
+      # and unlike the copies upstream drops in ~/.config/systemd/user that stub
+      # *overrides* the session PATH uwsm imported -- omarchy-system-sleep-
+      # monitor would not find dbus-monitor, and none of them would find the
+      # other omarchy-* commands they call. The system profile is where the
+      # package's runtimeDeps already live, by the package's own design: bin/ is
+      # a symlink farm rather than wrapped programs, so the CLI can still read
+      # the `# omarchy:summary=` metadata out of each script.
+      #
+      # omarchy-speaker-tuning is absent for a different reason: omarchy-audio-
+      # tuning installs it itself, by copying the unit into
+      # ~/.config/systemd/user and running `systemctl --user enable`. Declaring
+      # it would not race that copy -- the user directory outranks /etc -- but
+      # `omarchy audio tuning off` disables and deletes it, and `disable` cannot
+      # remove an [Install] symlink that lives in a read-only /etc, so the
+      # tuning would come back at the next login with the config it needs gone.
+      user.services = {
+        bt-agent = {
+          description = "Bluetooth pairing agent (auto-accept)";
+          documentation = [ "man:bt-agent(1)" ];
+          unitConfig.ConditionPathIsDirectory = "/sys/class/bluetooth";
+          after = [ "dbus.socket" ];
+          requires = [ "dbus.socket" ];
+          wantedBy = [ "graphical-session.target" ];
+          serviceConfig = {
+            Type = "simple";
+            # Skips cleanly on a machine with no usable adapter instead of
+            # entering a restart loop.
+            ExecCondition = "${config.systemd.package}/bin/systemctl is-active --quiet bluetooth.service";
+            # bt-agent is in bluez-tools, not bluez -- upstream gets it from
+            # base.packages, and the package's runtimeDeps carry only bluez
+            # because no script in bin/ calls it. Named by store path so it does
+            # not need to be on anyone's PATH.
+            #
+            # NoInputNoOutput auto-accepts pairing requests, which is safe only
+            # because bluez is `pairable: true` for as long as the Bluetooth
+            # panel is scanning and refuses inbound attempts outside that window.
+            ExecStart = "${pkgs.bluez-tools}/bin/bt-agent -c NoInputNoOutput";
+            Restart = "on-failure";
+            RestartSec = 2;
+          };
+        };
+
+        omarchy-sleep-lock = {
+          description = "Lock Omarchy before suspend";
+          after = [
+            "dbus.socket"
+            "wayland-session-waitenv.service"
+          ];
+          requires = [ "dbus.socket" ];
+          partOf = [ "graphical-session.target" ];
+          wantedBy = [ "graphical-session.target" ];
+          path = [ "/run/current-system/sw" ];
+          # Upstream also has ConditionEnvironment=OMARCHY_PATH, which checks the
+          # user manager's environment -- true here only because uwsm imports
+          # what omarchy-session exported. The store path is known at build
+          # time, so it is passed in below instead and the condition dropped;
+          # WAYLAND_DISPLAY is what actually proves a graphical session.
+          unitConfig.ConditionEnvironment = "WAYLAND_DISPLAY";
+          # omarchy-system-sleep-monitor resolves its companion
+          # omarchy-system-sleep-lock through $OMARCHY_PATH, not through PATH.
+          environment.OMARCHY_PATH = "${cfg.package}/share/omarchy";
+          serviceConfig = {
+            Type = "simple";
+            ExecStart = "${cfg.package}/bin/omarchy-system-sleep-monitor";
+            Restart = "always";
+            RestartSec = 2;
+          };
+        };
+
+        omarchy-crash-watch = {
+          description = "Announce process crashes and offer an AI diagnosis";
+          after = [ "graphical-session.target" ];
+          partOf = [ "graphical-session.target" ];
+          wantedBy = [ "graphical-session.target" ];
+          path = [ "/run/current-system/sw" ];
+          unitConfig = {
+            ConditionEnvironment = "WAYLAND_DISPLAY";
+            # Written by omarchy-toggle-crash-capture. Checked here so a
+            # watcher switched off stays off across logins, which matters more
+            # on NixOS than on Arch: the unit is declared, so `systemctl --user
+            # disable` has nothing it can remove.
+            ConditionPathExists = "!%h/.local/state/omarchy/toggles/crash-capture-off";
+          };
+          serviceConfig = {
+            Type = "simple";
+            ExecStart = "${cfg.package}/bin/omarchy-crash-watch";
+            Restart = "always";
+            RestartSec = 5;
+          };
+        };
+
+        omarchy-recover-internal-monitor = {
+          description = "Recover the internal monitor toggle when no external display is connected";
+          before = [ "graphical-session-pre.target" ];
+          wantedBy = [ "graphical-session-pre.target" ];
+          path = [ "/run/current-system/sw" ];
+          unitConfig.ConditionPathExists = "%h/.local/state/omarchy/toggles/hypr/internal-monitor-disable.lua";
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${cfg.package}/bin/omarchy-hw-recover-internal-monitor";
+          };
+        };
+      }
+      # fcitx5 is what turns the CapsLock compose sequences in ~/.XCompose into
+      # text -- the file is seeded correctly by the Home Manager module, and
+      # nothing was ever running to interpret it. Skipped entirely if someone
+      # chose a different input method, since ExecStart would then name a binary
+      # that package does not ship.
+      // lib.optionalAttrs usingFcitx5 {
+        omarchy-fcitx5 = {
+          description = "Fcitx5 input method (XCompose sequences)";
+          after = [ "graphical-session.target" ];
+          partOf = [ "graphical-session.target" ];
+          wantedBy = [ "graphical-session.target" ];
+          # After= is ordering only. An `omarchy update` over SSH has a live user
+          # manager and no compositor, and a fcitx5 started there owns the bus
+          # name with no WAYLAND_DISPLAY -- the later graphical login then finds
+          # the unit already active and never starts a working one.
+          unitConfig.ConditionEnvironment = "WAYLAND_DISPLAY";
+          serviceConfig = {
+            Type = "simple";
+            # notificationitem duplicates the tray entry Omarchy renders itself.
+            ExecStart = "${config.i18n.inputMethod.package}/bin/fcitx5 --disable notificationitem";
+            # always, not on-failure: fcitx5 exits 0 when another instance owns
+            # its bus name, and a clean exit still leaves no input method.
+            Restart = "always";
+            RestartSec = 2;
+          };
+        };
+      };
+
+      # default/systemd/user/app.slice.d/10-oomd.conf. systemd-oomd is on by
+      # default in NixOS, and with no slice marked as a candidate it has nothing
+      # it is allowed to kill. Marking app.slice -- where uwsm-app puts every
+      # launched application -- leaves the compositor structurally ineligible:
+      # Hyprland runs in session.slice, so oomd takes the browser or terminal
+      # that caused the pressure and the session survives to report it.
+      #
+      # Deliberately not systemd.oomd.enableUserSlices, which is the obvious
+      # switch and the wrong one: it sets the same properties on user.slice and
+      # on the user manager's own root slice, which puts the compositor back in
+      # the candidate pool. asDropin rather than a systemd.user.slices entry so
+      # systemd's own app.slice definition is extended, not replaced.
+      #
+      # Upstream's oomd.conf.d also lowers the global thresholds to 50% over 20s
+      # from systemd's 60% over 30s. Not carried over: those are a tuning
+      # preference, and the defaults still fire.
+      user.units."app.slice" = {
+        overrideStrategy = "asDropin";
+        text = ''
+          [Slice]
+          ManagedOOMMemoryPressure=kill
+          ManagedOOMSwap=kill
+        '';
+      };
+    };
 
     # bin/omarchy-brightness-display-ddc talks to monitors over i2c
     hardware.i2c.enable = lib.mkDefault true;
@@ -659,6 +923,17 @@ in
     # anyone reaching for `lib.mkForce boot.plymouth.theme = "omarchy"` on a
     # stylix machine hits, because stylix sets themePackages at normal priority
     # and wins it.
+    # The one thing upstream's installer does that needs a name.
+    #
+    # install/hardware/input-group.sh runs `usermod -aG input`, and without it
+    # the dictation tools and controllers Omarchy offers cannot read their
+    # devices. Skipped entirely when programs.nixarchy.user is unset, because
+    # the alternative is guessing which of a machine's users logs into the
+    # desktop.
+    users.users = lib.optionalAttrs (cfg.user != null) {
+      ${cfg.user}.extraGroups = [ "input" ];
+    };
+
     boot.plymouth = lib.mkMerge [
       (lib.mkIf (cfg.bootSplash != "off") {
         enable = lib.mkDefault true;
@@ -673,6 +948,29 @@ in
       })
     ];
 
+    # default/fontconfig/conf.avail/50-omarchy.conf, which upstream symlinks
+    # into /etc/fonts/conf.d. Without it `fc-match monospace` on a live
+    # session answered Adwaita Mono, so every application asking for the
+    # generic family got a font Omarchy never chose -- and half the file's
+    # rules had nothing to resolve to anyway, because Liberation was not
+    # installed (see fonts.packages below).
+    #
+    # The whole file rather than fonts.fontconfig.defaultFonts, which covers
+    # the three generic families and nothing else: this also carries the
+    # system-ui / -apple-system / BlinkMacSystemFont aliases that Electron and
+    # web apps ask for by name, the emoji and Nerd Font fallback chains, and
+    # the Arabic script rules.
+    #
+    # localConf, not a package in fontconfig's conf.d, for two reasons:
+    # fonts.conf includes local.conf last, so these rules win the ties they
+    # are meant to win, and it is one mkDefault a user can take back whole.
+    # Read from the flake input rather than from cfg.package, because
+    # readFile on a derivation output is import-from-derivation and would
+    # make this module unevaluatable without building Omarchy first.
+    fonts.fontconfig.localConf = lib.mkDefault (
+      builtins.readFile "${inputs.omarchy}/default/fontconfig/conf.avail/50-omarchy.conf"
+    );
+
     fonts.packages = [
       # Omarchy's own icon font travels inside the package, at
       # share/fonts/truetype/omarchy.ttf. Without it registered here the menu
@@ -685,7 +983,29 @@ in
       noto-fonts-color-emoji
       nerd-fonts.jetbrains-mono
       font-awesome
+
+      # What 50-omarchy.conf assigns sans-serif, serif and the system-ui
+      # aliases to. On Arch it arrives with the base packages; here its
+      # absence made those rules name a family fontconfig could not resolve,
+      # so they fell through to whatever was installed.
+      liberation_ttf
     ]);
+
+    # default/environment.d/10-omarchy-fcitx.conf, plus the daemon that reads
+    # it -- fcitx5 was not installed at all. i18n.inputMethod rather than
+    # dropping fcitx5 into systemPackages: it is what builds fcitx5 with its
+    # addons, writes the Qt plugin path, and sets XMODIFIERS and the GTK/Qt IM
+    # modules. The unit that starts it is above.
+    i18n.inputMethod = {
+      enable = lib.mkDefault true;
+      type = lib.mkDefault "fcitx5";
+    };
+
+    # The two of upstream's four that the nixpkgs module does not set. It has
+    # no opinion on either, and SDL applications and the older INPUT_METHOD
+    # convention read nothing else.
+    environment.sessionVariables.INPUT_METHOD = lib.mkIf usingFcitx5 (lib.mkDefault "fcitx");
+    environment.sessionVariables.SDL_IM_MODULE = lib.mkIf usingFcitx5 (lib.mkDefault "fcitx");
 
     xdg.portal = {
       enable = lib.mkDefault true;

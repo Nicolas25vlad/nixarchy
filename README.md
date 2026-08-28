@@ -105,6 +105,22 @@ Install ▸ Apply changes  →  nixos-rebuild switch --flake
 
 The notification is clickable and runs the rebuild.
 
+### Naming the user who runs the desktop
+
+```nix
+programs.nixarchy.user = "alice";
+```
+
+Optional, and worth setting. A NixOS machine has many users and the module
+cannot guess which one logs into Omarchy, so the few things that need a name
+are skipped rather than applied to someone arbitrary. Today that is the
+**`input` group** — upstream's installer runs `usermod -aG input`, and without
+it the dictation tools and game controllers Omarchy offers cannot read their
+devices.
+
+`browserThemeUser` is deliberately *not* defaulted from it: naming the desktop
+user should not silently hand them the browsers' policy directories.
+
 ### The boot splash and the login screen
 
 Two different screens, with two very different answers.

@@ -194,6 +194,18 @@ else
   say "  which costs nothing on a machine without one.${off}"
 fi
 
+# The input group is the one thing upstream's installer does that needs a name,
+# and the module cannot guess it -- so the doctor is where a user finds out.
+if id -nG 2>/dev/null | tr ' ' '\n' | grep -qx input; then
+  finding "You are in the input group" "$ok" "dictation and controllers can read their devices"
+else
+  finding "You are not in the input group" "$warn" ""
+  say "     Omarchy's dictation tools and controllers need it. nixarchy adds"
+  say "     it for the user you name:"
+  say "       programs.nixarchy.user = \"$USER\";"
+fi
+say ""
+
 say "  ${dim}programs.nixarchy.browserThemeUser = \"$USER\" tints Chromium with"
 say "  the current theme. Off by default: it hands that user the browsers'"
 say "  policy directories, which on a shared machine is policy for everyone."
