@@ -462,6 +462,46 @@ cores landed where RetroArch looks. This asks those, and prints what it found
 rather than a verdict: `llvmpipe` and `AMD Radeon` are both a pass to a script
 and mean opposite things to a person.
 
+On a laptop with hybrid graphics it reads:
+
+```
+Session    ✓ Omarchy shell running        pid 2019165
+Graphics   ✓ hardware rendering
+             Mesa Intel(R) UHD Graphics (CML GT2)
+             Intel CometLake-H GT2 [UHD Graphics]
+             NVIDIA GA104M [GeForce RTX 3080 Mobile / Max-Q 8GB/16GB]
+Bluetooth  ✓ bluetoothd sees 1 adapter(s)
+Theme      ✓ portal reports dark          ✓ cursor follows the theme
+Shell      ✓ functions wired in           ✓ compose sequences resolve
+
+16 passed, 0 failed, 3 worth a look
+```
+
+It distinguishes **absent from broken**: on a machine that has never installed
+Omarchy the checks that need it report as notes, not failures, and the header
+names the desktop that *is* running.
+
+### What running it on real hardware found
+
+Nine defects, none of which any VM check could have caught. Six were in this
+repo, and three were in the checks themselves -- tests that passed for
+structural reasons rather than because anything was right:
+
+| | |
+|---|---|
+| `start-hyprland` | the session exec'd the Hyprland binary directly, and 0.56 logs a warning asking to be supervised by its watchdog |
+| `OMARCHY_PATH` | all three shell rc files fell back to `/usr/share/omarchy` when the variable was unset — a path that can never exist here, so a systemd unit or container sourcing one got no aliases at all. They locate themselves now |
+| the app selection | copied into the flake and imported by nobody: apps looked enabled and were never built. `apply` says so now |
+| Vulkan | looked in `/usr/share/vulkan/icd.d`, which NixOS does not use — it reported no Vulkan on every machine |
+| both app launchers | tested `-x /usr/bin/<app>`, never true here, so clicking Spotify offered to *install* Spotify |
+| the boot splash | Omarchy's Plymouth theme was never installed, so the one screen every boot shows was unbranded |
+| **the graphics check** | reported "hardware rendering" on any machine, llvmpipe included: it matched a header containing no renderer, so the software-rendering case could never fire |
+| **the shell check** | `pgrep -x quickshell` cannot match `.quickshell-wrapped`, so it reported the bar missing while it was on screen |
+| **the functions check** | `type tdl` from a script cannot see a parent shell's functions — it was incapable of passing, for every shell |
+
+The last three are the reason this section exists. A check that cannot fail
+looks exactly like a check that passes.
+
 ### If you already have a `~/.config/hypr/hyprland.lua`
 
 Nothing is overwritten, and you keep both desktops. The seed never replaces a
@@ -752,8 +792,8 @@ is the quick one to run while editing `data/apps.nix`.
 
 ## Status
 
-Working, and each line names what proves it rather than asserting it. Every
-one of these runs in CI on each push.
+Working, and each line names what proves it rather than asserting it. All but
+the last run in CI on each push; the last is two machines that boot it.
 
 | | proven by |
 | --- | --- |
@@ -769,6 +809,9 @@ one of these runs in CI on each push.
 | Every Install row mapped | `checks.options` compares upstream's menu against `data/apps.nix` both ways -- a row added upstream that nobody maps fails, and so does one that no longer exists |
 | Every menu row's command existing | `checks.options` resolves all 129 `omarchy-*` commands the 323 rows name; a row whose command vanished draws normally and does nothing |
 | Migrations refusing to run | `checks.session` asserts `omarchy migrate` explains itself instead of running 86 Arch scripts that sudo into `/usr` |
+| The session under Hyprland's watchdog | `checks.coexist` greps the journal for the warning 0.56 logs when the compositor is exec'd directly instead of through `start-hyprland` |
+| The shell rc files locating themselves | `checks.session` sources each with `OMARCHY_PATH` unset and asserts it resolves to the store, not to a `/usr` path that cannot exist |
+| **Two real machines** | a workstation and a laptop, both running it beside niri, Hyprland and GNOME behind greetd. `nixarchy-verify` inside the laptop's session: 16 passed, 0 failed |
 | The shell chain in bash, zsh and fish | asserted by running each shell and calling the functions, not by checking a file exists |
 | Compose keys, Bluetooth, UPower, the browser accent | asserted on the thing itself: the include resolves, the unit is enabled, the portal answers, the colour is the theme's |
 
