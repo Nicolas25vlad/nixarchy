@@ -215,7 +215,7 @@ programs.nixarchy.apps.tailscale = {
 
 ```nix
 {
-  inputs.nixarchy.url = "github:olafkfreund/nixarchy";
+  inputs.nixarchy.url = "github:olafkfreund/nixarchy/v4.0.1-1";
 
   outputs = { nixpkgs, nixarchy, ... }: {
     nixosConfigurations.mymachine = nixpkgs.lib.nixosSystem {
@@ -413,10 +413,12 @@ before nixarchy is an input anywhere. It changes nothing.
 
 Then, in order:
 
-1. **Add the input**, and import the NixOS module.
+1. **Add the input**, and import the NixOS module. Pin a release unless you
+   want `main` moving under you -- see [Releases](#releases) for what the
+   version means.
 
    ```nix
-   inputs.nixarchy.url = "github:olafkfreund/nixarchy";
+   inputs.nixarchy.url = "github:olafkfreund/nixarchy/v4.0.1-1";
    # in your host's modules:
    imports = [ inputs.nixarchy.nixosModules.nixarchy ];
    programs.nixarchy.enable = true;
@@ -765,6 +767,43 @@ over the network, and the build sandbox has none.
 
 `inputs.nixpkgs.follows` is deliberately **not** set on it — hyprwm asks
 consumers not to, and overriding forfeits their binary cache.
+
+## Releases
+
+```nix
+inputs.nixarchy = {
+  url = "github:olafkfreund/nixarchy/v4.0.1-1";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
+**The version names the Omarchy it vendors**, because that is the first thing
+anyone needs to know about a packaging repo: `v4.0.1-1` is Omarchy 4.0.1. The
+suffix counts packaging releases against that upstream — a fix here that does
+not move Omarchy becomes `v4.0.1-2`, and Omarchy 4.0.2 becomes `v4.0.2-1`. A
+plain semantic version would leave you reading the changelog to answer the
+question the tag should answer on sight.
+
+`inputs.nixpkgs.follows` is worth setting. The module takes its package from
+`pkgs.extend`, so following your nixpkgs keeps Omarchy's ~80 runtime
+dependencies as the store paths your system already has, rather than a second
+copy built from nixarchy's own.
+
+Tracking `main` instead is reasonable while you are trying things — it is what
+the machines this is developed on do — but it moves, and the option surface has
+been moving with it.
+
+The `nix run` commands in this README are deliberately left unpinned.
+`doctor`, `verify` and `vm` are one-shot and change nothing, so the newest is
+the one you want; it is flake *inputs*, which decide what your system is built
+from, that are worth holding still.
+
+**There is no 1.0 yet, deliberately.** `plugins`, `preinstallsExclude` and
+`bootSplash` were all added within a day of each other. 1.0 is a promise that
+the options have stopped changing, and they have not; that number is worth
+keeping until it means something. Until then, expect options to be added and
+occasionally reshaped between releases, and read the release notes before
+bumping.
 
 ## Development
 
