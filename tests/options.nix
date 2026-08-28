@@ -92,6 +92,16 @@ let
         );
     };
 
+    # bootSplash, which is three-valued rather than a switch. The half that
+    # matters is `force`: it has to beat a theme set at normal priority, which
+    # is what stylix does and what sends people reaching for mkForce on
+    # boot.plymouth.theme alone -- a build failure, because themePackages then
+    # does not contain what the name points at.
+    bootSplash = {
+      on = (configWith { bootSplash = "force"; }).boot.plymouth.theme == "omarchy";
+      off = (configWith { bootSplash = "off"; }).boot.plymouth.theme == "omarchy";
+    };
+
     browserThemeUser = {
       # null is the default, so this one reads the other way round: the rules
       # appear when a user is named.

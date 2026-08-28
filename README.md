@@ -105,6 +105,42 @@ Install ▸ Apply changes  →  nixos-rebuild switch --flake
 
 The notification is clickable and runs the rebuild.
 
+### The boot splash and the login screen
+
+Two different screens, with two very different answers.
+
+**The boot splash** is Omarchy's by default, and yields to anything that names
+a theme of its own — stylix does, so a stylix machine keeps the stylix splash.
+To take Omarchy's instead:
+
+```nix
+programs.nixarchy.bootSplash = "force";
+```
+
+`force` moves `boot.plymouth.theme` **and** `themePackages` together. Reaching
+for `lib.mkForce` on the theme alone does not work: NixOS asserts the named
+theme exists in the package list, and on a stylix machine stylix still owns
+that list, so the build fails on a theme it cannot find. `"off"` leaves
+`boot.plymouth` alone entirely.
+
+**The login screen is SDDM-only, and this is a real limitation.** Omarchy's
+greeter is an SDDM theme — `Main.qml` plus assets, written against SDDM's own
+`userModel` and `login()` API. It is not a program greetd can run, and upstream
+ships nothing for greetd. So:
+
+- **On SDDM** you get it automatically. `programs.nixarchy.displayManager` is
+  on by default and sets `services.displayManager.sddm.theme = "omarchy"`,
+  branded with the NIXARCHY wordmark.
+- **On greetd** you cannot have that screen. Your greeter keeps greeting and
+  picks up the Omarchy session like any other — which is what
+  `programs.nixarchy.displayManager = false` is for. Switching to SDDM to get
+  it means giving up greetd, and two display managers is not a working
+  configuration.
+
+There is no third option today. Porting the QML to a greetd greeter would mean
+rewriting it against a different login API, which is a fork of upstream's
+greeter rather than a setting.
+
 ### Apps you already have
 
 The Install menu dims a row when the app is already there — whether it is in

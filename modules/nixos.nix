@@ -173,6 +173,31 @@ in
       '';
     };
 
+    bootSplash = lib.mkOption {
+      type = lib.types.enum [
+        "defer"
+        "force"
+        "off"
+      ];
+      default = "defer";
+      description = ''
+        What to do about Omarchy's Plymouth boot splash.
+
+        `defer` sets it at `mkDefault`, so anything that names a theme of its
+        own keeps it -- stylix does, which is why a stylix machine boots to the
+        stylix splash with nixarchy installed. This is the default because a
+        boot splash is a taste, and one already chosen should survive.
+
+        `force` takes Omarchy's instead. Both `boot.plymouth.theme` and
+        `boot.plymouth.themePackages` are forced together, because forcing only
+        the name leaves NixOS asserting a theme that is not in the package list
+        and failing the build -- which is exactly what someone reaching for
+        `lib.mkForce` on the theme alone runs into.
+
+        `off` leaves `boot.plymouth` untouched, including `enable`.
+      '';
+    };
+
     preinstallsExclude = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -614,19 +639,30 @@ in
     # installed, the daemon was not.
     hardware.bluetooth.enable = lib.mkDefault true;
 
-    boot.plymouth = {
-      enable = lib.mkDefault true;
-      # Omarchy's own splash, which upstream installs by copying into
-      # /usr/share/plymouth/themes from omarchy-refresh-plymouth. Nothing was
-      # doing that here, so plymouth came up with NixOS' default theme -- the
-      # one screen every boot shows, unbranded.
-      #
-      # mkDefault on both: a theme is a taste, and someone who has already
-      # chosen one should keep it. NixOS asserts the named theme exists in
-      # themePackages, so a mismatch fails the build rather than the boot.
-      themePackages = lib.mkDefault [ cfg.package ];
-      theme = lib.mkDefault "omarchy";
-    };
+    # Omarchy's own splash, which upstream installs by copying into
+    # /usr/share/plymouth/themes from omarchy-refresh-plymouth. Nothing was
+    # doing that here, so plymouth came up with NixOS' default theme -- the one
+    # screen every boot shows, unbranded.
+    #
+    # Theme and themePackages always move together, at whatever priority
+    # bootSplash asks for. NixOS asserts the named theme exists in the package
+    # list, so setting one without the other fails the build -- which is what
+    # anyone reaching for `lib.mkForce boot.plymouth.theme = "omarchy"` on a
+    # stylix machine hits, because stylix sets themePackages at normal priority
+    # and wins it.
+    boot.plymouth = lib.mkMerge [
+      (lib.mkIf (cfg.bootSplash != "off") {
+        enable = lib.mkDefault true;
+      })
+      (lib.mkIf (cfg.bootSplash == "defer") {
+        themePackages = lib.mkDefault [ cfg.package ];
+        theme = lib.mkDefault "omarchy";
+      })
+      (lib.mkIf (cfg.bootSplash == "force") {
+        themePackages = lib.mkForce [ cfg.package ];
+        theme = lib.mkForce "omarchy";
+      })
+    ];
 
     fonts.packages = [
       # Omarchy's own icon font travels inside the package, at

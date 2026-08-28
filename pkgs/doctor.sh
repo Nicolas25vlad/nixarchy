@@ -153,8 +153,9 @@ plymouth_theme=$( (grep -h '^Theme=' /etc/plymouth/plymouthd.conf 2>/dev/null |
 if [ -n "$plymouth_theme" ]; then
   finding "Plymouth is showing '$plymouth_theme'" "$warn" ""
   say "     nixarchy defaults boot.plymouth.theme to its own splash, so yours"
-  say "     wins and nothing collides. Drop your setting to take Omarchy's."
-  notes+=("Your Plymouth theme '${plymouth_theme}' is kept. nixarchy only defaults its own, so no mkForce is needed either way.")
+  say "     wins and nothing collides. To take Omarchy's instead:"
+  say "       programs.nixarchy.bootSplash = \"force\";"
+  notes+=("Your Plymouth theme '${plymouth_theme}' is kept -- nixarchy only defaults its own. programs.nixarchy.bootSplash = \"force\" takes Omarchy's instead; mkForce on boot.plymouth.theme alone fails the build, because themePackages stays yours and the named theme is then missing from it.")
 else
   finding "No Plymouth theme set" "$ok" "you get Omarchy's splash"
 fi
