@@ -41,6 +41,7 @@
   zbar,
   qrencode,
   # Hardware controls
+  pciutils,
   brightnessctl,
   ddcutil,
   pulseaudio,
@@ -150,6 +151,13 @@ let
     tesseract
     zbar
     qrencode
+    # `lspci`. Eight omarchy-hw-* guards ask it what hardware is present, and a
+    # missing command is indistinguishable from absent hardware to every one of
+    # them: on a live hybrid-GPU laptop omarchy-hw-hybrid-gpu counted zero GPUs
+    # and the menu simply had no GPU row. It belongs here rather than in the
+    # module's systemPackages, because it is this package's own scripts that
+    # call it -- nothing a user types needs lspci on PATH.
+    pciutils
     brightnessctl
     ddcutil
     pulseaudio
@@ -361,6 +369,32 @@ stdenvNoCC.mkDerivation {
                 sed -i 's/cp -aL /cp -aL --no-preserve=mode /g' \
                   $out/share/omarchy/bin/omarchy-plugin-clone
 
+                # The third site of the same store-mode problem, and the expensive one.
+                #
+                # These two copies land 17 desktop files in ~/.local/share/applications
+                # at the store's 444, so the NEXT run cannot rewrite its own output:
+                #
+                #   cp: cannot create regular file '.../Basecamp.desktop': Permission denied
+                #
+                # omarchy-provision-user runs under `set -euo pipefail` and calls this
+                # eleven lines before `omarchy-done mark finalize-user`, so it aborted
+                # here, the marker was never written, and provisioning re-ran and
+                # re-failed on every login -- with nothing after the call ever running
+                # once. ~/.local/state/omarchy/done did not exist on a machine that had
+                # been in daily use for months.
+                #
+                # -f as well as --no-preserve=mode: the mode flag only stops NEW copies
+                # from landing read-only, and every machine installed before this
+                # already has 444 files that cp cannot open for writing even as their
+                # owner. -f unlinks and retries, which repairs those in place.
+                substituteInPlace $out/share/omarchy/bin/omarchy-refresh-applications \
+                  --replace-fail \
+                    'cp "$OMARCHY_PATH"/applications/*.desktop' \
+                    'cp -f --no-preserve=mode "$OMARCHY_PATH"/applications/*.desktop' \
+                  --replace-fail \
+                    'cp "$OMARCHY_PATH/default/alacritty/Alacritty.desktop"' \
+                    'cp -f --no-preserve=mode "$OMARCHY_PATH/default/alacritty/Alacritty.desktop"'
+
                 # Both launchers accept a handful of browser desktop-file names and fall
                 # back to "chromium.desktop" for anything else. nixpkgs ships chromium's
                 # entry as chromium-browser.desktop, so xdg-settings returns a name that
@@ -516,25 +550,54 @@ stdenvNoCC.mkDerivation {
               'echo "The tuning limiter needs the LSP LV2 plugins, which are not installed." >&2
               echo "Add pkgs.lsp-plugins to environment.systemPackages and rebuild." >&2'
 
+            # Every unit in default/systemd/user has ExecStart=/usr/bin/..., and one
+            # of them is not a dead file: the script above installs
+            # omarchy-speaker-tuning.service from there into ~/.config/systemd/user
+            # every time the tuning is switched on, so that /usr path travels out of
+            # the store and into a real unit. systemd requires an absolute ExecStart,
+            # so there is nothing to fall back to on PATH -- the service would fail to
+            # start with status=203/EXEC and the tuning would never appear.
+            #
+            # /run/current-system/sw rather than pipewire's store path, for the same
+            # reason install/user/xcompose.sh points at /etc: what this writes into
+            # $HOME outlives the generation that wrote it, and a store path would go
+            # stale the first time that generation was collected, taking the
+            # already-installed tuning down with it. pipewire is deliberately not a
+            # dependency of this package either -- it is the audio daemon the running
+            # system provides, and services.pipewire.enable is what puts it there.
+            substituteInPlace $out/share/omarchy/default/systemd/user/omarchy-speaker-tuning.service \
+              --replace-fail 'ExecStart=/usr/bin/pipewire' \
+              'ExecStart=/run/current-system/sw/bin/pipewire'
+
             # 1Password'"'"'s Chromium extension, installed the way NixOS installs one.
             #
             # Upstream drops a JSON stub into /usr/share/chromium/extensions with sudo,
             # which Chromium reads on startup. That directory is in the store here and
             # the write simply fails. NixOS has the same feature as an option, so the
             # answer is to name it rather than to find somewhere writable to imitate it.
+            #
+            # echo lines rather than the heredoc this was first written as. A heredoc
+            # terminator has to sit at column 0 of the generated script, and this text
+            # is indented twice over -- once as an indented Nix string and once as the
+            # body of a shell function -- so bash never found EXTMSG and the whole
+            # script stopped parsing:
+            #
+            #   syntax error: unexpected end of file
+            #
+            # substituteInPlace cannot see that and neither can the build: the
+            # installer was a syntax error for as long as this patch existed. `bash -n`
+            # over the patched bins is what catches this class, and nothing else does.
             substituteInPlace $out/share/omarchy/bin/omarchy-install-service-1password \
               --replace-fail 'sudo mkdir -p "$EXTENSION_DIR"' \
-              'cat >&2 <<EXTMSG
-        Chromium extensions are declared on NixOS, not dropped into a directory.
-
-          Add the extension to your configuration:
-
-            programs.chromium.enable = true;
-            programs.chromium.extensions = [ "$EXTENSION_ID" ];
-
-          then rebuild. 1Password itself is handled above.
-        EXTMSG
-          return' \
+              'echo "Chromium extensions are declared on NixOS, not dropped into a directory." >&2
+              echo "" >&2
+              echo "  Add the extension to your configuration:" >&2
+              echo "" >&2
+              echo "    programs.chromium.enable = true;" >&2
+              echo "    programs.chromium.extensions = [ \"$EXTENSION_ID\" ];" >&2
+              echo "" >&2
+              echo "  then rebuild. 1Password itself is handled above." >&2
+              return' \
               --replace-fail 'printf '"'"'{ "external_update_url": "%s" }\n'"'"' "$WEBSTORE_UPDATE_URL" | sudo tee "$EXTENSION_FILE" >/dev/null' \
               ':' \
               --replace-fail 'sudo chmod 644 "$EXTENSION_FILE"' ':' \
@@ -696,6 +759,128 @@ stdenvNoCC.mkDerivation {
                 substituteInPlace $out/share/omarchy/bin/omarchy-provision-user \
                   --replace-fail 'xdg-mime default HEY.desktop' \
                     'xdg-mime default omarchy-HEY.desktop'
+
+                # The same chromium-browser.desktop rename as omarchy-launch-webapp, on
+                # the three other paths that name the file rather than launch it.
+                #
+                # provision-user is the one that mattered. `xdg-settings set
+                # default-web-browser chromium.desktop` exits 2 -- "one of the files
+                # does not exist" -- under `set -euo pipefail`, so it aborted on the
+                # line BEFORE the xdg-mime patch above, which is why that patch had
+                # never once run on any machine. In a clean $HOME, against nixpkgs' own
+                # entry:
+                #
+                #   chromium.desktop          exit 2
+                #   chromium-browser.desktop  exit 0
+                #
+                # omarchy-default-browser names it twice and both halves were broken by
+                # it: `omarchy default browser chromium` exited 1 having set nothing,
+                # and the no-argument read fell through to printing the raw desktop id
+                # instead of "chromium" -- which is the string the menu shows as the
+                # current browser. omarchy-remove-browser only writes the fallback, and
+                # its `|| true` swallowed the failure, so removing Chrome quietly left
+                # the machine with a default browser that resolves to nothing.
+                for f in omarchy-provision-user omarchy-default-browser omarchy-remove-browser; do
+                  substituteInPlace $out/share/omarchy/bin/$f \
+                    --replace-fail 'chromium.desktop' 'chromium-browser.desktop'
+                done
+
+                # Nothing may sed /etc/pam.d.
+                #
+                # /etc/pam.d/sudo and /etc/pam.d/polkit-1 are symlinks into
+                # /etc/static/pam.d, and GNU `sed -i` does not follow a symlink: it
+                # writes a temporary file and renames it over the link, so the entry
+                # stops being NixOS-managed and becomes a stale regular file holding a
+                # copy of the stack. Two of the four scripts here do that on the way in
+                # and two on the way out, and the way out is the one that fires unasked:
+                # its guard is `grep -q pam_u2f.so /etc/pam.d/sudo`, which is TRUE on a
+                # machine that enabled u2fAuth the NixOS way -- so Remove FIDO2 detached
+                # the stack of a user who never ran Setup at all.
+                #
+                # The edit was inert either way. It inserts a bare `pam_u2f.so`, and
+                # every module NixOS names in these stacks is an absolute store path;
+                # the detached file is then silently restored by the next rebuild. So it
+                # read as a no-op that quietly broke /etc in between.
+                #
+                # The functions go rather than being emptied, and their call sites are
+                # replaced separately: `setup_pam_config` is then a single occurrence in
+                # each file, so what is left is a one-line anchor that cannot be broken
+                # by how this Nix string happens to be indented.
+                sed -i \
+                  -e '/^setup_pam_config() {$/,/^}$/d' \
+                  -e '/^setup_lock_fingerprint_pam() {$/,/^}$/d' \
+                  $out/share/omarchy/bin/omarchy-setup-security-fido2 \
+                  $out/share/omarchy/bin/omarchy-setup-security-fingerprint
+                sed -i '/^remove_pam_config() {$/,/^}$/d' \
+                  $out/share/omarchy/bin/omarchy-remove-security-fido2 \
+                  $out/share/omarchy/bin/omarchy-remove-security-fingerprint
+
+                # Only the PAM step goes. Everything before it works and is worth
+                # keeping: pamu2fcfg really does register a key into /etc/fido2/fido2,
+                # and fprintd-enroll really does enroll a print. What cannot be done
+                # from inside a running system is the last step, so that is the step
+                # that says so -- and exits non-zero, because at that point the feature
+                # is registered but not yet usable.
+                substituteInPlace $out/share/omarchy/bin/omarchy-setup-security-fido2 \
+                  --replace-fail 'setup_pam_config' \
+                    'echo "" >&2
+                    echo "PAM is configured by your NixOS build, not by editing /etc/pam.d." >&2
+                    echo "" >&2
+                    echo "  Your key is registered -- /etc/fido2/fido2 holds the credential." >&2
+                    echo "  What is left is telling PAM to accept it:" >&2
+                    echo "" >&2
+                    echo "    security.pam.u2f.enable = true;" >&2
+                    echo "    security.pam.u2f.settings.authfile = \"/etc/fido2/fido2\";" >&2
+                    echo "    security.pam.u2f.settings.cue = true;" >&2
+                    echo "    security.pam.services.sudo.u2fAuth = true;" >&2
+                    echo "    security.pam.services.polkit-1.u2fAuth = true;" >&2
+                    echo "" >&2
+                    echo "  then: sudo nixos-rebuild switch --flake <your-flake>" >&2
+                    exit 1'
+
+                substituteInPlace $out/share/omarchy/bin/omarchy-setup-security-fingerprint \
+                  --replace-fail 'setup_pam_config' \
+                    'echo "" >&2
+                    echo "PAM is configured by your NixOS build, not by editing /etc/pam.d." >&2
+                    echo "" >&2
+                    echo "  Your fingerprint is enrolled and verified. What is left is" >&2
+                    echo "  telling PAM to accept it:" >&2
+                    echo "" >&2
+                    echo "    services.fprintd.enable = true;" >&2
+                    echo "    security.pam.services.sudo.fprintAuth = true;" >&2
+                    echo "    security.pam.services.polkit-1.fprintAuth = true;" >&2
+                    echo "    security.pam.services.hyprlock.fprintAuth = true;" >&2
+                    echo "" >&2
+                    echo "  then: sudo nixos-rebuild switch --flake <your-flake>" >&2
+                    exit 1' \
+                  --replace-fail 'setup_lock_fingerprint_pam' ':'
+
+                # The removal side says the same thing in one breath. Both keep
+                # everything else they do -- dropping the packages, and in the
+                # fingerprint case removing /etc/pam.d/omarchy-lock-fingerprint, which
+                # is a plain file the lock screen writes rather than a link into the
+                # store, so removing it is right.
+                substituteInPlace $out/share/omarchy/bin/omarchy-remove-security-fido2 \
+                  --replace-fail 'remove_pam_config' \
+                    'echo "PAM is configured by your NixOS build, so there is nothing to unpick" >&2
+                    echo "in /etc/pam.d. Drop security.pam.u2f and the u2fAuth lines from your" >&2
+                    echo "configuration and rebuild. The registration itself is removed below." >&2
+                    echo "" >&2'
+
+                substituteInPlace $out/share/omarchy/bin/omarchy-remove-security-fingerprint \
+                  --replace-fail 'remove_pam_config' \
+                    'echo "PAM is configured by your NixOS build, so there is nothing to unpick" >&2
+                    echo "in /etc/pam.d. Drop the fprintAuth lines and services.fprintd from" >&2
+                    echo "your configuration and rebuild." >&2
+                    echo "" >&2'
+
+                # The drift guard for all four: if an upstream release moves these edits
+                # into a script this does not name, the build stops here rather than
+                # shipping something that detaches a PAM stack.
+                if grep -rln '/etc/pam.d/sudo\|/etc/pam.d/polkit-1' $out/share/omarchy/bin/; then
+                  echo "the scripts above still edit a NixOS-managed PAM stack" >&2
+                  exit 1
+                fi
 
                 # Each Icon= key is the file's basename lowercased with runs of non
                 # alphanumerics collapsed to a dash -- safe_icon_name() in

@@ -555,6 +555,74 @@ pkgs.testers.runNixOSTest {
                "$HOME/.config/nixarchy/apps.nix")
     print("vim is offered by the selection, not selected, and already on PATH")
 
+    # ---- what the seed puts in a new user's home --------------------------
+    # Each of these was absent on a real machine, and each broke something
+    # quietly.
+    root = ("$(dirname $(dirname $(readlink -f "
+            "/run/current-system/sw/bin/omarchy)))")
+
+    # flags.lua, and *only* flags.lua. For these toggles presence is
+    # enablement -- seeding the directory wholesale brings the desktop up with
+    # no window gaps and every window forced square, which is the obvious
+    # wrong fix. The directory itself is what the bar's FileView watches, and
+    # a watch on a directory that does not exist never fires: omarchy-toggle-bar
+    # wrote bar-off and the bar stayed on screen until the shell restarted.
+    machine.succeed(
+        "test -f /home/omarchy/.local/state/omarchy/toggles/hypr/flags.lua")
+    for absent in ["window-no-gaps", "single-window-aspect-ratio"]:
+        machine.succeed(
+            f"test ! -e /home/omarchy/.local/state/omarchy/toggles/hypr/{absent}.lua")
+    print("the toggle state directory is seeded, with only flags.lua in it")
+
+    # Branding. Without about.txt the About window opens with a blank logo
+    # column; without screensaver.txt the screensaver has no art. Both must be
+    # writable -- a store file copied verbatim lands read-only, and these exist
+    # to be edited.
+    for f in ["about.txt", "screensaver.txt"]:
+        machine.succeed(f"test -s /home/omarchy/.config/omarchy/branding/{f}")
+        machine.succeed(f"test -w /home/omarchy/.config/omarchy/branding/{f}")
+    # Compared byte-for-byte against the package's own logo.txt rather than
+    # grepped for "NIXARCHY": the banner is block-character art, so the word
+    # never appears as text. This pins that the branded banner this repo
+    # builds is what gets seeded, not upstream's.
+    machine.succeed(
+        f"cmp -s {root}/logo.txt "
+        "/home/omarchy/.config/omarchy/branding/screensaver.txt")
+    machine.succeed(
+        f"cmp -s {root}/icon.txt "
+        "/home/omarchy/.config/omarchy/branding/about.txt")
+    print("branding files are seeded, writable, and ours")
+
+    # ---- the scripts that write into a home directory ---------------------
+    # omarchy-refresh-applications copied store files with a plain cp, so they
+    # landed 444 and the *next* run could not overwrite them. That aborted
+    # omarchy-provision-user under pipefail before it marked finalize-user, so
+    # the whole first-run sequence re-ran and re-failed on every login.
+    refresh = machine.succeed(
+        f"cat {root}/bin/omarchy-refresh-applications")
+    assert "--no-preserve=mode" in refresh, (
+        "omarchy-refresh-applications still copies store files with their mode")
+    assert "cp -f" in refresh, (
+        "without -f it cannot overwrite the 444 files already on disk")
+    print("refresh-applications copies without the store's read-only mode")
+
+    # Every shipped bash script parses. This is the check that would have
+    # caught omarchy-install-service-1password, whose heredoc terminator landed
+    # indented by a patch in this repo -- a hard syntax error that shipped
+    # because nobody ever ran bash -n over the result.
+    machine.succeed(
+        "cat > /tmp/parseprobe.sh <<'PPEOF'\n"
+        "root=$(dirname $(dirname $(readlink -f /run/current-system/sw/bin/omarchy)))\n"
+        "for f in \"$root/bin\"/*; do\n"
+        "  head -1 \"$f\" 2>/dev/null | grep -q bash || continue\n"
+        "  bash -n \"$f\" 2>/dev/null || basename \"$f\"\n"
+        "done\n"
+        "PPEOF")
+    unparseable = machine.succeed("bash /tmp/parseprobe.sh").split()
+    assert not unparseable, (
+        f"these shipped scripts are not valid bash: {unparseable}")
+    print("every shipped bash script parses")
+
     # ---- every keybinding launches something that exists ------------------
     # A key bound to a missing program fails only when somebody presses it,
     # with a notification naming the program and nothing else. SUPER + SHIFT +

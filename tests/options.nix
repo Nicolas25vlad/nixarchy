@@ -161,6 +161,10 @@ let
     "install.development.rails"
   ];
 
+  # The built reference machine, for the things that are facts about a system
+  # rather than about an option.
+  vm = inputs.self.nixosConfigurations.vm.config.system.build.toplevel;
+
   broken = pkgs.lib.filterAttrs (_: c: !(c.on && !c.off)) cases;
 
   report = pkgs.lib.concatStringsSep "\n" (
@@ -172,7 +176,7 @@ in
 pkgs.runCommand "nixarchy-options"
   {
     inherit report;
-    inherit menuFile;
+    inherit menuFile vm;
     omarchyPath = "${(pkgs.extend inputs.self.overlays.default).omarchy}/share/omarchy";
     mapped = pkgs.lib.concatStringsSep " " mappedRows;
     notApps = pkgs.lib.concatStringsSep " " notApps;
@@ -181,11 +185,68 @@ pkgs.runCommand "nixarchy-options"
   (
     if broken == { } then
       ''
-        echo "$report"
-        echo "every option adds what it should and removes it again"
+          echo "$report"
+          echo "every option adds what it should and removes it again"
 
-        python3 ${./coverage.py}
-        touch $out
+          python3 ${./coverage.py}
+
+        # ---- the lock screen has a PAM stack ------------------------------
+        # Omarchy 4.x's lock screen is quickshell-native and reads
+        # /etc/pam.d/omarchy-lock-password. This module used to declare
+        # security.pam.services.hyprlock instead -- PAM for a program the
+        # desktop no longer runs -- so `omarchy-shell lock lock` answered
+        # "missing-pam" and the screen stayed unlocked, on a real laptop,
+        # through the keybinding, the menu, idle, lid close and suspend.
+        test -e "$vm/etc/pam.d/omarchy-lock-password" || {
+          echo "no /etc/pam.d/omarchy-lock-password: the lock screen cannot authenticate" >&2
+          exit 1
+        }
+        grep -q 'pam_unix.so' "$vm/etc/pam.d/omarchy-lock-password" || {
+          echo "the lock PAM stack has no pam_unix auth" >&2; exit 1; }
+        if [ -e "$vm/etc/pam.d/hyprlock" ]; then
+          echo "still declaring PAM for hyprlock, which Omarchy 4 does not run" >&2
+          exit 1
+        fi
+        echo "the lock screen has a PAM stack"
+
+        # ---- the user units exist and name store paths --------------------
+        # Upstream ships these under default/systemd/user, which is not a
+        # systemd search path, so nothing ever loaded them: no lock before
+        # suspend, no Bluetooth pairing agent, no crash watcher. Their
+        # ExecStart lines are all /usr/bin/..., so declaring them is only half
+        # the job -- the paths have to be real too.
+        for unit in bt-agent omarchy-sleep-lock omarchy-crash-watch \
+          omarchy-recover-internal-monitor; do
+          test -e "$vm/etc/systemd/user/$unit.service" || {
+            echo "$unit.service is not installed where systemd looks" >&2; exit 1; }
+        done
+        if grep -rl '/usr/bin/' "$vm/etc/systemd/user/"*.service >/dev/null 2>&1; then
+          echo "a user unit still points at /usr/bin, which does not exist here:" >&2
+          grep -rl '/usr/bin/' "$vm/etc/systemd/user/"*.service >&2
+          exit 1
+        fi
+        test -e "$vm/etc/systemd/user/graphical-session.target.wants/omarchy-sleep-lock.service" || {
+          echo "omarchy-sleep-lock is installed but never started" >&2; exit 1; }
+        echo "the user units are installed, wanted, and name store paths"
+
+        # ---- logind gives sleep-lock time to work -------------------------
+        grep -q 'HandlePowerKey=ignore' "$vm/etc/systemd/logind.conf" || {
+          echo "the power button still hard-poweroffs instead of opening the menu" >&2
+          exit 1
+        }
+        grep -q 'InhibitDelayMaxSec=15' "$vm/etc/systemd/logind.conf" || {
+          echo "no inhibit delay: sleep-lock may not secure the screen before suspend" >&2
+          exit 1
+        }
+        echo "logind defers the power key and allows an inhibit delay"
+
+        # ---- fonts resolve to Omarchy's, not nixpkgs' ---------------------
+        grep -q 'JetBrainsMono Nerd Font' "$vm/etc/fonts/local.conf" 2>/dev/null || {
+          echo "fontconfig does not pin Omarchy's monospace; fc-match answers Adwaita Mono" >&2
+          exit 1
+        }
+        echo "fontconfig pins Omarchy's font choices"
+          touch $out
       ''
     else
       ''
