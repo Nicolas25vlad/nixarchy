@@ -647,6 +647,40 @@ in
                 echo "(import it from your flake: imports = [ ./nixarchy-apps.nix ];)"
               fi
 
+              # Whether anything in the flake actually imports it.
+              #
+              # Copying the selection in is only half the job: a flake cannot
+              # read a file outside its own tree, so the copy is necessary, and
+              # importing it is the user's. Nothing checked that, so a machine
+              # that never added the import got the full ceremony -- the menu
+              # marking apps enabled, this script reporting a copy, a rebuild
+              # running to completion -- and installed nothing, every time. It
+              # took someone asking why `dictation.enable = true` never
+              # installed anything to notice.
+              #
+              # Excludes the copy itself, which of course contains its own name
+              # nowhere but is matched by the filename glob.
+              importers=$(grep -rl 'nixarchy-apps\.nix' "$flake" \
+                --include='*.nix' 2>/dev/null |
+                grep -v '/nixarchy-apps\.nix$' || true)
+
+              if [ -z "$importers" ]; then
+                echo
+                echo "WARNING: nothing in $flake imports nixarchy-apps.nix."
+                echo
+                echo "  The selection has been copied, and a rebuild will"
+                echo "  ignore it: every app you enable will look installed"
+                echo "  and never be built."
+                echo
+                echo "  Add it to this host's configuration:"
+                echo "    imports = [ ./nixarchy-apps.nix ];"
+                echo
+                echo "  The path is relative to the file you put it in, so a"
+                echo "  host under hosts/<name>/ needs ../../nixarchy-apps.nix"
+                echo "  or however many levels up the flake root is."
+                echo
+              fi
+
               read -r -p "Build and switch now? [y/N] " reply
               case "$reply" in
                 [yY]*) exec sudo nixos-rebuild switch --flake "$flake" ;;

@@ -173,6 +173,21 @@ selection, because deselecting is the only removal nixarchy is allowed to
 perform. An app that arrived from your own configuration is not this menu's to
 take away.
 
+### The selection has to be imported
+
+`nixarchy-apply` copies `~/.config/nixarchy/apps.nix` to your flake root as
+`nixarchy-apps.nix`. A flake cannot read a file outside its own tree, so the
+copy is unavoidable — but **importing it is yours to do**:
+
+```nix
+imports = [ ./nixarchy-apps.nix ];   # path relative to the file you add it to
+```
+
+Without that line the menu marks apps enabled, apply reports a copy, the
+rebuild runs to completion, and **nothing is ever installed**. `apply` now says
+so loudly rather than leaving you to work it out from an app that never
+appears.
+
 ### Why it isn't a package list
 
 Several of these are **not packages** on NixOS, and a flat `systemPackages`
