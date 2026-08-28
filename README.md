@@ -413,6 +413,18 @@ and mean opposite things to a person.
 
 ### If you already have a `~/.config/hypr/hyprland.lua`
 
+Nothing is overwritten, and you keep both desktops. The seed never replaces a
+file you own, so Omarchy's own `hyprland.lua` is not installed — and it does not
+need to be. The **Omarchy** session entry runs Hyprland with `--config` against
+Omarchy's copy in the store, so your Hyprland session stays exactly yours and
+Omarchy's is Omarchy's. Pick whichever at the greeter.
+
+You will see one line on rebuild saying so. The only case that warns is
+`programs.nixarchy.session = false` *and* a Home Manager-owned `hypr/` — with
+no session entry and no installed config, that configuration has Omarchy's
+applications and menus but no way to reach its desktop.
+
+
 Nixarchy never overwrites a file you own, so Omarchy's own `hyprland.lua` is
 not installed and nothing in `~/.config/hypr` starts its bar or binds its keys.
 

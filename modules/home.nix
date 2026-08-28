@@ -162,8 +162,27 @@ in
         ownsHyprConfig =
           (config.wayland.windowManager.hyprland.enable or false)
           || lib.any (n: lib.hasPrefix "hypr/" n) (lib.attrNames config.xdg.configFile);
+
+        # Whether there is an Omarchy session entry to log into.
+        #
+        # When there is, a home-manager-owned ~/.config/hypr is not a problem:
+        # it is the arrangement this module is built for, and the session runs
+        # Omarchy's config with --config regardless. Warning anyway meant every
+        # rebuild on a machine already doing the right thing printed twelve
+        # lines telling it to do the right thing.
+        #
+        # Only the case that actually loses the desktop is worth a warning: no
+        # session entry, and a hypr directory that will never load Omarchy. The
+        # informational half is one line from the seed instead, and the doctor
+        # says it before anyone installs at all.
+        #
+        # `or true` is the option's default; `or false` on enable because a
+        # standalone home-manager install has no NixOS module registering
+        # sessions at all.
+        hasOmarchySession =
+          (osConfig.programs.nixarchy.enable or false) && (osConfig.programs.nixarchy.session or true);
       in
-      lib.optional ownsHyprConfig ''
+      lib.optional (ownsHyprConfig && !hasOmarchySession) ''
         nixarchy: ~/.config/hypr is already managed by Home Manager
         (wayland.windowManager.hyprland, or an xdg.configFile "hypr/..." entry).
 
@@ -171,14 +190,14 @@ in
         overwrites a file you own -- so nothing in ~/.config/hypr loads
         Omarchy's bar or its keybindings.
 
-        Log in through the "Omarchy" entry rather than your own Hyprland
-        session. It runs Hyprland against Omarchy's own hyprland.lua with
-        --config, so it needs none of ~/.config/hypr/hyprland.lua, and both
-        sessions work: yours stays yours, Omarchy's is Omarchy's. It is
-        registered by programs.nixarchy.session, which is on by default.
+        There is also no "Omarchy" session entry to log into, because
+        programs.nixarchy.session is off. Between the two, this configuration
+        gets Omarchy's applications and menus but never its desktop.
 
-        With that option off, this configuration gets Omarchy's applications
-        and menus but never its desktop.
+        Turn programs.nixarchy.session back on. It registers a session that
+        runs Hyprland against Omarchy's own hyprland.lua with --config, so it
+        needs nothing in ~/.config/hypr, and both desktops work: yours stays
+        yours, Omarchy's is Omarchy's.
       '';
 
     home = {
@@ -237,6 +256,18 @@ in
         # keybindings, and foot and btop unthemed.
         seed_dir "${omarchyPath}/config" "${config.xdg.configHome}"
         note_kept "${omarchyPath}/config/hypr" "${config.xdg.configHome}/hypr"
+
+        # And say, once, which session to pick.
+        #
+        # The twelve-line warning that used to cover this fired on every
+        # rebuild of a machine that was already logging into Omarchy correctly.
+        # This is the same fact in one line, printed only when the situation
+        # applies: home-manager owns the hypr config, so Omarchy's own is not
+        # installed and the session entry is the way in.
+        if [ -e "${config.xdg.configHome}/hypr/hyprland.lua" ] \
+          && [ -L "${config.xdg.configHome}/hypr/hyprland.lua" ]; then
+          echo "nixarchy: ~/.config/hypr is yours; log in through the \"Omarchy\" session for Omarchy's desktop"
+        fi
 
         # install/user/theme.sh. btop.conf asks for a theme named "current",
         # and omarchy-theme-set-templates renders btop.theme into the current
