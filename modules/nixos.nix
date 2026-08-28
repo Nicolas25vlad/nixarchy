@@ -996,9 +996,20 @@ in
     # dropping fcitx5 into systemPackages: it is what builds fcitx5 with its
     # addons, writes the Qt plugin path, and sets XMODIFIERS and the GTK/Qt IM
     # modules. The unit that starts it is above.
+    # Priority 1250, which is neither of the two names lib gives you, because
+    # this option is squeezed between them. GNOME's desktop-manager module sets
+    # type to "ibus" at mkDefault (1000) and two mkDefaults tie rather than
+    # yield, so a host running GNOME beside this session failed to evaluate at
+    # all -- not the wrong input method, no evaluation. One step lower is not
+    # available either: nixpkgs' own module defines type as null at
+    # mkOptionDefault (1500) to carry the deprecated `enabled` across, and
+    # nullOr refuses to merge null with a value, so matching that ties in the
+    # other direction. Sitting between the two loses to anyone with a real
+    # opinion and still beats nixpkgs' placeholder, which is exactly the rule
+    # this module follows everywhere else: arrive beside what is installed.
     i18n.inputMethod = {
-      enable = lib.mkDefault true;
-      type = lib.mkDefault "fcitx5";
+      enable = lib.mkOverride 1250 true;
+      type = lib.mkOverride 1250 "fcitx5";
     };
 
     # The two of upstream's four that the nixpkgs module does not set. It has
