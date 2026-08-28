@@ -91,8 +91,21 @@ fi
 # matches the shell that invoked this script, because the pattern is sitting
 # in that shell's own command line -- which is how it reported a running
 # Omarchy bar on a machine with niri on the screen.
+# `pgrep -x quickshell` was the third thing tried here and does not work on
+# NixOS: the binary is wrapped, so the process name is ".quickshell-wrapped",
+# truncated by the kernel to ".quickshell-wra" -- and -x matches the whole
+# name. This script reported "Omarchy shell not running" on a laptop with the
+# bar plainly on screen, which is the one thing it exists to notice.
+#
+# Matching comm on a substring catches the wrapper and the bare binary both,
+# and keeps the self-match protection that -x was chosen for: this script's own
+# process is a shell, so its comm is never quickshell however the pattern is
+# spelled.
+quickshells=$(ps -eo pid,comm --no-headers 2>/dev/null |
+  awk '$2 ~ /quickshell/ { print $1 }')
+
 omarchy_shell=""
-for p in $(pgrep -x quickshell 2>/dev/null); do
+for p in $quickshells; do
   if tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | grep -q omarchy; then
     omarchy_shell=$p
     break
@@ -101,7 +114,7 @@ done
 
 if [ -n "$omarchy_shell" ]; then
   ok "Omarchy shell running" "pid $omarchy_shell"
-elif pgrep -x quickshell >/dev/null 2>&1; then
+elif [ -n "$quickshells" ]; then
   maybe_bad "a quickshell is running, but not Omarchy's" "another shell owns this session"
 else
   maybe_bad "Omarchy shell not running" "the bar is the thing most likely to be missing"
@@ -257,11 +270,34 @@ done
 
 # ---- the shell -----------------------------------------------------------
 head_ "Shell"
-if type tdl >/dev/null 2>&1 || command -v tdl >/dev/null 2>&1; then
-  ok "Omarchy's functions are here" "in ${SHELL##*/}"
+# Checked by looking at what the system rc sources, not by calling one of the
+# functions.
+#
+# `type tdl` cannot work from here however the shell is spelled: this script
+# runs as its own bash process, and a function defined in the user's
+# interactive shell is not inherited by a child. So it reported "Omarchy's
+# functions are missing" on a laptop where an interactive zsh finds every one
+# of them -- the check was structurally incapable of seeing what it asked
+# about.
+#
+# What is actually knowable from a script is whether the chain is wired in at
+# all, which is the thing that breaks: /etc/zshrc sourcing Omarchy's rc is what
+# puts the functions in every new shell.
+case "${SHELL##*/}" in
+  bash) rc=/etc/bashrc ;;
+  zsh) rc=/etc/zshrc ;;
+  fish) rc=/etc/fish/config.fish ;;
+  *) rc="" ;;
+esac
+
+if [ -z "$rc" ]; then
+  hmm "your shell is ${SHELL##*/}" "the chain reaches bash, zsh and fish"
+  say_dim "you keep the menus and the desktop, and lose the aliases"
+elif [ -f "$rc" ] && grep -q 'share/omarchy' "$rc" 2>/dev/null; then
+  ok "Omarchy's functions are wired in" "$rc sources them for ${SHELL##*/}"
 else
-  maybe_bad "Omarchy's functions are missing" "in ${SHELL##*/}"
-  say_dim "bash, zsh and fish are covered; anything else is not"
+  maybe_bad "Omarchy's functions are not wired in" "$rc does not source them"
+  say_dim "programs.nixarchy.shellIntegration may be off"
 fi
 
 compose=$( { sed -n 's/^include "\(.*\)"$/\1/p' "$HOME/.XCompose" 2>/dev/null |
