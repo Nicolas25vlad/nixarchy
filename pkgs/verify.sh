@@ -124,32 +124,58 @@ fi
 # The VM runs llvmpipe, so it can never answer this. On real hardware a
 # software renderer means something is wrong with the driver, not the desktop.
 head_ "Graphics"
-# `|| true` on the whole pipeline, and not merely on hyprctl.
-# writeShellApplication runs this under `set -euo pipefail`, so a grep that
-# matches nothing fails the pipeline and errexit ends the script -- silently,
-# mid-report, which is exactly what it did here: the output stopped after the
-# word "Graphics" on a machine with no Hyprland running.
+# Two sources, because neither one answers the whole question.
+#
+# `hyprctl systeminfo | grep Renderer` was the first version and was wrong
+# twice over. There is no Renderer line in that output at all -- 0.56.2 prints
+# "GPU information:" as a bare header with the lspci lines under it -- so the
+# grep matched only the header, printed "GPU information:" and nothing else,
+# and then fell through to the *) case and said "hardware rendering" purely
+# because the string was non-empty. A check that cannot fail. On a laptop
+# running llvmpipe it would have said the same thing.
+#
+# The renderer is in aquamarine's log instead, which is where the EGL context
+# it actually created gets named, llvmpipe included. Glob over the instance
+# directories rather than $HYPRLAND_INSTANCE_SIGNATURE so a session that did
+# not export it still gets an answer; grep -a because the log is not
+# guaranteed to stay text. `|| true` on the whole pipeline: under pipefail a
+# grep that matches nothing kills the report mid-run, which this section has
+# already done once.
 renderer=$(
   {
-    timeout 5 hyprctl systeminfo 2>/dev/null |
-      grep -iE "GPU information|Renderer" |
-      head -2 |
-      tr '\n' ' '
+    grep -ah 'Renderer: ' "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/hypr/*/hyprland.log 2>/dev/null |
+      tail -1 |
+      sed 's/.*Renderer: //'
   } || true
 )
-if [ -n "$renderer" ]; then
-  case "$renderer" in
-    *llvmpipe* | *softpipe* | *swrast*)
-      bad "software rendering" "the driver is not being used"
-      say_dim "$renderer"
-      ;;
-    *)
-      ok "hardware rendering" ""
-      say_dim "$renderer"
-      ;;
-  esac
+# The lspci lines are still worth printing -- they name the hardware, which the
+# renderer string does not on a hybrid machine. Strip the PCI address, the
+# vendor:device ids and the (rev ..) noise; keep the model.
+gpus=$(
+  {
+    timeout 5 hyprctl systeminfo 2>/dev/null |
+      sed -n 's/^[0-9a-f]\{2\}:[0-9a-f.]* \(VGA compatible controller\|3D controller\|Display controller\)[^:]*: //p' |
+      sed -e 's/ \[[0-9a-f]\{4\}:[0-9a-f]\{4\}\].*$//' -e 's/ Corporation / /' -e 's/ Inc\. / /'
+  } || true
+)
+
+case "$renderer" in
+  '')
+    hmm "could not read the renderer" "no Renderer line in any hyprland.log"
+    ;;
+  *llvmpipe* | *softpipe* | *swrast* | *SWR*)
+    bad "software rendering" "the driver is not being used"
+    say_dim "$renderer"
+    ;;
+  *)
+    ok "hardware rendering" ""
+    say_dim "$renderer"
+    ;;
+esac
+if [ -n "$gpus" ]; then
+  while IFS= read -r gpu; do say_dim "$gpu"; done <<<"$gpus"
 else
-  hmm "could not read the renderer" "hyprctl systeminfo said nothing"
+  hmm "no GPU listed" "hyprctl systeminfo named no display controller"
 fi
 
 # ---- bluetooth -----------------------------------------------------------
