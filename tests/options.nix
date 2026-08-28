@@ -36,6 +36,27 @@ let
       ];
     }).config;
 
+  # A host where some other module already has an opinion, so what is being
+  # measured is whose definition survives -- not what nixarchy asks for alone.
+  configBeside =
+    extra:
+    (inputs.nixpkgs.lib.nixosSystem {
+      inherit system;
+      modules = [
+        inputs.self.nixosModules.nixarchy
+        { programs.nixarchy.enable = true; }
+        extra
+        {
+          boot.loader.grub.device = "/dev/sda";
+          fileSystems."/" = {
+            device = "/dev/sda1";
+            fsType = "ext4";
+          };
+          system.stateVersion = "25.05";
+        }
+      ];
+    }).config;
+
   sessionNames =
     cfg: map (p: p.passthru.providedSessions or [ ]) cfg.services.displayManager.sessionPackages;
 
@@ -100,6 +121,20 @@ let
     bootSplash = {
       on = (configWith { bootSplash = "force"; }).boot.plymouth.theme == "omarchy";
       off = (configWith { bootSplash = "off"; }).boot.plymouth.theme == "omarchy";
+    };
+
+    # The input method, which is not an option of ours but a default we set on
+    # someone else's. GNOME's desktop-manager module sets the same option to
+    # "ibus" at mkDefault; when this module matched that priority the two tied
+    # and a host running both failed to evaluate at all -- not a wrong value, no
+    # value. So the assertion is that another module's mkDefault wins outright,
+    # and that fcitx5 still lands on a host with no other opinion.
+    inputMethod = {
+      on = (configWith { }).i18n.inputMethod.type == "fcitx5";
+      off =
+        (configBeside {
+          i18n.inputMethod.type = pkgs.lib.mkDefault "ibus";
+        }).i18n.inputMethod.type == "fcitx5";
     };
 
     browserThemeUser = {
