@@ -165,8 +165,9 @@ in
 
         Six of upstream's thirteen cannot be here: obsidian is unfree, so it
         would abort the whole rebuild rather than fail on its own -- enable
-        `apps.obsidian` for it instead -- and aether, cliamp, omacut, omacalc
-        and omawrite are Omarchy's own applications, not packaged in nixpkgs.
+        `apps.obsidian` for it instead -- and aether, omacut, omacalc and
+        omawrite are Omarchy's own applications, not packaged in nixpkgs.
+        cliamp is, and is included: it arrived after this was first written.
         lazydocker is already a runtime dependency.
 
         Turning this off is the declarative Remove > Preinstalls.
@@ -286,6 +287,7 @@ in
               "kdenlive"
               "gnome-disk-utility"
               "sushi"
+              "cliamp"
             ];
           in
           lib.all (n: builtins.elem n known) cfg.preinstallsExclude;
@@ -302,10 +304,11 @@ in
               "kdenlive"
               "gnome-disk-utility"
               "sushi"
+              "cliamp"
             ] cfg.preinstallsExclude
           )
           + ". The set is: pinta libreoffice xournalpp obs-studio moonlight-qt "
-          + "kdenlive gnome-disk-utility sushi.";
+          + "kdenlive gnome-disk-utility sushi cliamp.";
       }
       {
         assertion = config.programs.hyprland.package.version or "0" >= "0.55";
@@ -492,6 +495,12 @@ in
             # Disks for formatting and SMART, and sushi is what makes Space
             # preview a file in Nautilus without opening it.
             inherit (pkgs) gnome-disk-utility sushi;
+
+            # Omarchy's own music TUI, bound to SUPER + SHIFT + ALT + M. The
+            # text above said it was not in nixpkgs; it arrived after that was
+            # written, so the keybinding had been failing on a package that was
+            # available the whole time.
+            inherit (pkgs) cliamp;
           } cfg.preinstallsExclude
         )
       );

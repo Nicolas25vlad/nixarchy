@@ -71,3 +71,4 @@ if missing:
         "nothing when chosen."
     )
 print(f"all {len(menu)} menu rows name commands that exist")
+

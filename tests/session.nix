@@ -555,6 +555,53 @@ pkgs.testers.runNixOSTest {
                "$HOME/.config/nixarchy/apps.nix")
     print("vim is offered by the selection, not selected, and already on PATH")
 
+    # ---- every keybinding launches something that exists ------------------
+    # A key bound to a missing program fails only when somebody presses it,
+    # with a notification naming the program and nothing else. SUPER + SHIFT +
+    # ALT + M did that for cliamp, which had been in nixpkgs for a while by
+    # then, and SUPER + SHIFT + W still does for omawrite, which is not.
+    #
+    # Checked in the VM rather than at build time on purpose: the answer is
+    # what is on the session PATH, and a build sandbox cannot see the system
+    # profile. Tried there first and it reported btop, cliamp and obsidian
+    # missing on a machine that has all three.
+    #
+    # Two forms: `omarchy = "x"` runs omarchy-launch-x, `launch`/`tui` run x
+    # directly. Only the first word is a program; the rest are flags.
+    machine.succeed(
+        "cat > /tmp/bindprobe.sh <<'BPEOF'\n"
+        "root=$(dirname $(dirname $(readlink -f /run/current-system/sw/bin/omarchy)))\n"
+        "for f in \"$root/default/hypr/bindings\"/*.lua; do\n"
+        "  grep -oE '(omarchy|launch|tui) *= *\"[^\"]+\"' \"$f\" 2>/dev/null |\n"
+        "    sed -E 's/ *= *\"/ /; s/\"$//' | while read -r kind target; do\n"
+        # awk, not a parameter expansion: this file is a Nix indented string
+        # and a dollar-brace is interpolated even inside a quoted fragment.
+        "      cmd=$(echo \"$target\" | awk '{print $1}')\n"
+        "      [ \"$kind\" = omarchy ] && cmd=\"omarchy-launch-$cmd\"\n"
+        "      command -v \"$cmd\" >/dev/null 2>&1 || echo \"$cmd\"\n"
+        "    done\n"
+        "done | sort -u\n"
+        "BPEOF")
+    machine.succeed("chmod 0755 /tmp/bindprobe.sh")
+    dead = machine.succeed(user % "bash /tmp/bindprobe.sh").split()
+
+    # Two are absent on purpose, and named rather than tolerated so either
+    # surfaces the day it stops being true.
+    #
+    # omawrite is Omarchy's own writing application and is not in nixpkgs, so
+    # SUPER + SHIFT + W has nothing to launch on any machine.
+    #
+    # obsidian is unfree, so it is opt-in through apps.obsidian rather than
+    # preinstalled -- an unfree package in the always-on set aborts the whole
+    # rebuild rather than failing on its own. Its key works on a machine that
+    # enables it; this one does not.
+    expected_absent = {"omawrite", "obsidian"}
+    dead = [d for d in dead if d not in expected_absent]
+    assert not dead, (
+        f"these keybindings launch something that does not exist: {dead}. "
+        "Install it, or name it here with the reason.")
+    print("every keybinding launches something that exists (bar omawrite)")
+
     # ---- the shell rc files know where they live --------------------------
     # All three opened with a fallback to /usr/share/omarchy for when
     # OMARCHY_PATH is unset, which on NixOS can never exist. Anything sourcing
