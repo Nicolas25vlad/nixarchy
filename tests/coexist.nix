@@ -122,6 +122,26 @@ pkgs.testers.runNixOSTest {
     machine.wait_until_succeeds("pgrep -u 1000 -f quickshell", timeout=180)
     print("Hyprland and the Omarchy shell are running")
 
+    # Started under its watchdog, not as a bare binary.
+    #
+    # Hyprland 0.56 logs
+    #
+    #   WARNING: Hyprland is being launched without start-hyprland.
+    #   This is highly advised against.
+    #
+    # when the compositor is exec'd directly, which is what this launcher did
+    # until somebody booted it on a laptop and read the journal. A warning is
+    # not a failure, so every check here passed while it was happening --
+    # asserted on the absence of the line, because that is the only thing that
+    # distinguishes the two.
+    warned = machine.succeed(
+        "journalctl -b --no-pager | grep -c 'without start-hyprland' || true"
+    ).strip()
+    assert warned == "0", (
+        "Hyprland is being launched without start-hyprland. The session "
+        "should exec start-hyprland and pass --config through its own `--`.")
+    print("the session runs Hyprland under start-hyprland")
+
     # The proof that Omarchy's own config was loaded rather than the foreign
     # one: quickshell is only ever started by Omarchy's autostart.lua, which
     # only runs if the entry point required it.

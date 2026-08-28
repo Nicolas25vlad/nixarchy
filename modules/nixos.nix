@@ -12,9 +12,23 @@ let
   # than from ~/.config/hypr/hyprland.lua. Hyprland's --config takes the entry
   # point; the modules it requires still resolve through $HOME/.config, which
   # is where the Home Manager seed puts them.
+  #
+  # Through start-hyprland rather than the Hyprland binary. Booting this on a
+  # real laptop logged
+  #
+  #   WARNING: Hyprland is being launched without start-hyprland.
+  #   This is highly advised against.
+  #
+  # start-hyprland is the watchdog Hyprland 0.56 wants supervising it, and it
+  # is what nixpkgs' own hyprland.desktop execs. Everything after its `--` is
+  # passed through to Hyprland, so --config still arrives where it was going.
+  # The VM never complained because a warning is not a failure -- it took
+  # somebody reading the journal on a machine that had actually logged in.
   omarchySessionLauncher = pkgs.writeShellScript "omarchy-session" ''
     export OMARCHY_PATH=${cfg.package}/share/omarchy
-    exec ${pkgs.uwsm}/bin/uwsm start -N Omarchy -D Hyprland --       ${config.programs.hyprland.package}/bin/Hyprland       --config ${cfg.package}/share/omarchy/config/hypr/hyprland.lua
+    exec ${pkgs.uwsm}/bin/uwsm start -N Omarchy -D Hyprland -- \
+      ${config.programs.hyprland.package}/bin/start-hyprland -- \
+      --config ${cfg.package}/share/omarchy/config/hypr/hyprland.lua
   '';
 
   # providedSessions has to match the .desktop basename or NixOS refuses it.
