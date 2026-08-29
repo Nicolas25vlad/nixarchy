@@ -5,6 +5,13 @@
   autoPatchelfHook,
   docker,
   makeWrapper,
+  writeShellApplication,
+  curl,
+  jq,
+  gnused,
+  nix,
+  coreutils,
+  gnugrep,
 }:
 let
   version = "0.3.1";
@@ -55,6 +62,77 @@ stdenvNoCC.mkDerivation {
   postFixup = ''
     wrapProgram $out/bin/once --prefix PATH : ${lib.makeBinPath [ docker ]}
   '';
+
+  # passthru.updateScript is where nixpkgs looks for this, so `nix-update` and
+  # nixpkgs' own update.nix find it without any wiring of ours.
+  #
+  # Not nix-update itself: it rewrites one hash, and this pins one binary per
+  # architecture from a single release, so a bump has to move both together or
+  # produce a tree that builds on x86 and not on ARM. Written out rather than
+  # generated because `once` is the only package here still pinned by hand --
+  # everything else is in nixpkgs or comes from a flake, and both update when
+  # a user runs `nix flake update`.
+  #
+  # Every rewrite is proved by a build before it can be committed; see
+  # .github/workflows/update.yml. A build is not proof the app still *works*,
+  # which is why those PRs are for a human to merge rather than automerged.
+  passthru.updateScript = writeShellApplication {
+    name = "update-once";
+    runtimeInputs = [
+      curl
+      jq
+      gnused
+      nix
+      coreutils
+      gnugrep
+    ];
+    text = ''
+      file="''${1:-pkgs/apps/once.nix}"
+      [ -f "$file" ] || { echo "no $file (run from the repo root)" >&2; exit 1; }
+
+      current=$(sed -n 's/.*version = "\([^"]*\)".*/\1/p' "$file" | head -1)
+      latest=$(curl -fsSL https://api.github.com/repos/basecamp/once/releases/latest \
+        | jq -r '.tag_name' | sed 's/^v//')
+
+      if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+        echo "once: could not read a release tag from GitHub" >&2
+        exit 1
+      fi
+      if [ "$current" = "$latest" ]; then
+        echo "once: already at $latest"
+        exit 0
+      fi
+      echo "once: $current -> $latest"
+
+      for pair in "x86_64-linux:amd64" "aarch64-linux:arm64"; do
+        key=''${pair%%:*}
+        arch=''${pair##*:}
+        url="https://github.com/basecamp/once/releases/download/v$latest/once-linux-$arch"
+        echo "  prefetching $key"
+        # --type sha256 keeps the plain hex the derivation already uses, so the
+        # diff is one hash per line rather than a format change.
+        hash=$(nix-prefetch-url --type sha256 "$url" 2>/dev/null | tail -1)
+        if [ -z "$hash" ]; then
+          echo "once: could not fetch $url" >&2
+          exit 1
+        fi
+        hex=$(nix hash to-base16 --type sha256 "$hash" 2>/dev/null || echo "$hash")
+        before=$(grep -c "$hex" "$file" || true)
+        sed -i -E "s|(\"$key\"[[:space:]]*=[[:space:]]*)\"[0-9a-f]{64}\"|\1\"$hex\"|" "$file"
+        after=$(grep -c "$hex" "$file" || true)
+        if [ "$before" = "$after" ]; then
+          # Bumping the version while leaving a stale hash produces a file that
+          # reports success and then fails to build, so refuse rather than hand
+          # that to a reviewer.
+          echo "once: could not rewrite the hash for '$key' in $file" >&2
+          exit 1
+        fi
+      done
+
+      sed -i -E "0,/version = \"[^\"]*\"/s//version = \"$latest\"/" "$file"
+      echo "once: rewrote $file to $latest"
+    '';
+  };
 
   meta = {
     description = "CLI and TUI for installing and managing self-hosted web applications";
