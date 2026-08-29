@@ -74,60 +74,39 @@
         # Apps Omarchy offers that nixpkgs does not carry. Packaged here so a
         # NixOS user gets the same menu Arch users do, rather than a menu with
         # holes in it.
-        nixarchy-apps =
-          let
-            mkUpdateScript = final.callPackage ./pkgs/apps/update-script.nix { };
-          in
-          {
-            # One updater per package pinned by version and hash here. Only
-            # `once` is: nixpkgs carries voxtype, t3code and the ChatGPT
-            # desktop now, zen comes from upstream's flake, and grok-bot is
-            # not published as a GitHub release so there is nothing to poll.
-            # Everything else updates when a user runs `nix flake update`.
-            updaters = {
-              once = mkUpdateScript {
-                pname = "once";
-                file = "pkgs/apps/once.nix";
-                repo = "basecamp/once";
-                artefacts = {
-                  "x86_64-linux" = "https://github.com/basecamp/once/releases/download/v@version@/once-linux-amd64";
-                  "aarch64-linux" = "https://github.com/basecamp/once/releases/download/v@version@/once-linux-arm64";
-                };
-              };
-            };
+        nixarchy-apps = {
+          once = final.callPackage ./pkgs/apps/once.nix { };
+          grok-bot = final.callPackage ./pkgs/apps/grok-bot.nix { };
 
-            once = final.callPackage ./pkgs/apps/once.nix { };
-            grok-bot = final.callPackage ./pkgs/apps/grok-bot.nix { };
-
-            # nixpkgs' `retroarch` is `retroarch-with-cores` built with an
-            # EMPTY core list, so installing it gives an emulator that can run
-            # nothing. `retroarch-full` is the obvious fix and the wrong one:
-            # it pulls unfree cores, and an unfree package in the app list
-            # aborts the whole rebuild rather than failing on its own.
-            #
-            # So: every core Omarchy's own picker offers that nixpkgs ships
-            # under a free licence, minus the two that dwarf the rest.
-            # snes9x and genesis-plus-gx are unfree, hence bsnes and blastem
-            # for those systems.
-            retroarch = final.retroarch.withCores (
-              cores:
-              map (n: cores.${n}) [
-                "bsnes" # SNES
-                "mesen" # NES
-                "gambatte" # Game Boy / Color
-                "mgba" # Game Boy Advance
-                "blastem" # Mega Drive / Genesis
-                "beetle-pce-fast" # PC Engine
-                "beetle-psx-hw" # PlayStation
-                "parallel-n64" # Nintendo 64
-                "desmume" # Nintendo DS
-                "flycast" # Dreamcast
-                "ppsspp" # PSP
-                "puae" # Amiga
-                "vice-x64" # Commodore 64
-              ]
-            );
-          };
+          # nixpkgs' `retroarch` is `retroarch-with-cores` built with an
+          # EMPTY core list, so installing it gives an emulator that can run
+          # nothing. `retroarch-full` is the obvious fix and the wrong one:
+          # it pulls unfree cores, and an unfree package in the app list
+          # aborts the whole rebuild rather than failing on its own.
+          #
+          # So: every core Omarchy's own picker offers that nixpkgs ships
+          # under a free licence, minus the two that dwarf the rest.
+          # snes9x and genesis-plus-gx are unfree, hence bsnes and blastem
+          # for those systems.
+          retroarch = final.retroarch.withCores (
+            cores:
+            map (n: cores.${n}) [
+              "bsnes" # SNES
+              "mesen" # NES
+              "gambatte" # Game Boy / Color
+              "mgba" # Game Boy Advance
+              "blastem" # Mega Drive / Genesis
+              "beetle-pce-fast" # PC Engine
+              "beetle-psx-hw" # PlayStation
+              "parallel-n64" # Nintendo 64
+              "desmume" # Nintendo DS
+              "flycast" # Dreamcast
+              "ppsspp" # PSP
+              "puae" # Amiga
+              "vice-x64" # Commodore 64
+            ]
+          );
+        };
 
         omarchy = final.callPackage ./pkgs/omarchy {
           src = omarchy;
@@ -228,7 +207,7 @@
         # `nix run .#update` -- rewrites the pinned version and hashes in
         # place. CI runs it weekly and opens a PR. Only `once` is pinned by
         # hand now; everything else follows nixpkgs or upstream's own flake.
-        update = pkgsFor.${system}.nixarchy-apps.updaters.once;
+        update = pkgsFor.${system}.nixarchy-apps.once.updateScript;
 
         # Boot the smoke test: `nix run .#vm`
         vm = self.nixosConfigurations.vm.config.system.build.vm;

@@ -138,10 +138,10 @@ in
         guess which one logs into Omarchy -- so leaving this unset simply skips
         that step rather than picking someone.
 
-        `browserThemeUser` defaults to this, so a single-user desktop can name
-        itself once. That option stays separate because it hands out the
-        browsers' policy directories, which is a decision worth making
-        deliberately rather than inheriting.
+        `browserThemeUser` is deliberately *not* inherited from this. Naming
+        the desktop user should not also hand them the browsers' policy
+        directories, which on a shared machine means policy for everyone; set
+        that one separately if you want it.
       '';
     };
 
@@ -290,16 +290,6 @@ in
       '';
     };
 
-    defaultTheme = lib.mkOption {
-      type = lib.types.str;
-      default = "tokyo-night";
-      example = "catppuccin";
-      description = ''
-        Theme seeded on first login. Not enforced afterwards: Omarchy switches
-        themes at runtime by rewriting ~/.local/state/omarchy, and that state
-        is deliberately left mutable.
-      '';
-    };
   };
 
   config = lib.mkIf cfg.enable {
