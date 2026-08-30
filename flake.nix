@@ -172,6 +172,10 @@
               hash = "sha256-CLX2Zp5i5BuLbOxNOkwRd9YY84IOrACNxBV79o9/F9Y=";
             };
           });
+          # The screensaver's text-effects engine, packaged in this repo rather
+          # than nixpkgs. Passed explicitly for the same reason hyprland is: it
+          # lives under nixarchy-apps, which callPackage does not search.
+          inherit (final.nixarchy-apps) ttfx;
         };
       };
 
