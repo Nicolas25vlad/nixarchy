@@ -108,6 +108,30 @@ record() {
   printf '%s\n' "$agent" >"$agent_file"
 }
 
+# gum confirm has three answers, not two: 0 is yes, 1 is no, 130 is a quit --
+# and anything else means it could not ask at all. The usual `gum confirm ... ||`
+# collapses the last two into "no", which is how an offer to build silently did
+# nothing at all when there was no terminal to draw on.
+#
+# So the caller says what "could not ask" should mean, rather than inheriting
+# whichever answer the shell's error convention happens to match.
+confirm() { # confirm <prompt> <yes|no, when it cannot be asked>
+  local prompt=$1 fallback=$2 rc
+
+  if [ -t 0 ] && [ -t 1 ] && command -v gum &>/dev/null; then
+    gum confirm "$prompt"
+    rc=$?
+    case $rc in
+      0) return 0 ;;
+      1) return 1 ;;
+      130) exit 130 ;; # a quit is a quit; the presentation wrapper reads this
+      *) ;;            # could not ask -- fall through
+    esac
+  fi
+
+  [ "$fallback" = yes ]
+}
+
 # The command each agent installs is its own id. Checked against PATH rather
 # than against a package database: what matters is whether omarchy-agent will
 # find it, and that is the same question.
@@ -140,19 +164,24 @@ if [[ -n $attr ]]; then
   fi
 
   echo
-  echo "Now build it. This takes a few minutes the first time:"
-  echo
-  echo "    nixarchy apply"
+  echo "Building it now. This takes a few minutes the first time, and asks for"
+  echo "your password to rebuild the system."
   echo
 
-  # Offered, not run. `nixarchy apply` rebuilds the whole system and asks for a
-  # password, and doing that unannounced from a menu click is not something to
-  # decide on the user's behalf.
-  if command -v gum &>/dev/null && gum confirm "Run it now?"; then
+  # Run, not offered. Choosing an agent and getting one used to be the same act
+  # -- upstream installs it there and then -- and splitting them is what left a
+  # ticked menu entry beside a `claude: command not found`. Declining is still
+  # possible, and says what it costs.
+  #
+  # "yes" when it cannot ask: the menu's own launcher has a terminal, so the
+  # cases that cannot are scripts and tests, where finishing the job the caller
+  # asked for beats stopping half way through it.
+  if confirm "Build it now?" yes; then
     exec nixarchy-apply
   fi
 
-  echo "Run 'nixarchy apply' when you are ready, then pick $name again."
+  echo "Not building. $name is in your configuration but not installed yet."
+  echo "Run 'nixarchy apply' when you are ready."
   exit 0
 fi
 

@@ -118,6 +118,13 @@ let
   # Everything the 438 scripts in bin/ invoke. Kept explicit rather than
   # pulled from a generated file: a missing entry should be a readable diff,
   # not a silent PATH lookup that only fails on someone else's machine.
+  # One line of the Default Agent menu, kept out of the build phase because it
+  # is JSON containing shell and every layer between here and the file wants to
+  # escape something different. Written once, plainly, here.
+  antigravityMenuRow = builtins.toFile "antigravity-menu-row.jsonc" ''
+    "setup.default.agent.antigravity": {"icon":"","label":"Antigravity","checked":"[[ \"$(omarchy-default-agent)\" == \"antigravity\" ]] && command -v agy >/dev/null","action":"omarchy-default-agent antigravity"},
+  '';
+
   runtimeDeps = [
     bash
     coreutils
@@ -792,6 +799,67 @@ stdenvNoCC.mkDerivation {
                 # an upstream edit to a line we depend on fails the build instead of
                 # quietly shipping Arch instructions again.
                 #
+                # The Default Agent menu, made to stop lying.
+                #
+                # Upstream's tick is `[[ "$(omarchy-default-agent)" == "claude" ]]`
+                # -- purely "you picked this". On Arch that is also "this is
+                # installed", because picking installs it there and then. Here the
+                # build is a rebuild, so the two came apart and the menu showed
+                # Claude ticked beside a terminal saying `claude: command not found`.
+                #
+                # Every agent's menu id is also the command it installs, which is what
+                # lets one loop do all nine. --replace-fail, so a row upstream renames
+                # stops the build rather than silently keeping the old meaning.
+                #
+                # No backslash before the ampersands: substituteInPlace is a literal
+                # string replacement, not sed, and escaping them put `\&\&` into the
+                # JSON -- which parses as an invalid control character, not as a shell
+                # `&&`. The jsonc is re-parsed at the end of this phase for that reason.
+                menu=$out/share/omarchy/default/omarchy/omarchy-menu.jsonc
+                for a in claude codex copilot crush gemini grok omp opencode pi; do
+                  substituteInPlace $menu \
+                    --replace-fail "== \\\"$a\\\" ]]" "== \\\"$a\\\" ]] && command -v $a >/dev/null"
+                done
+
+                # Antigravity has no row upstream: Google released it after this
+                # Omarchy version, deprecating gemini-cli in its favour. Its command is
+                # `agy` rather than its id, so it is written out rather than folded into
+                # the loop.
+                #
+                # The row comes from a file rather than from an inline string. Spelling
+                # one line of JSON, containing shell, inside awk, inside bash, inside a
+                # Nix string needs four levels of quoting agreeing with each other; the
+                # first attempt produced `\&\&` in the JSON and a literal backslash-n
+                # where a newline belonged. builtins.toFile has exactly one level.
+                ${gawk}/bin/awk -v rowfile=${antigravityMenuRow} '
+                  BEGIN { getline row < rowfile }
+                  !ins && /"setup\.default\.agent\.claude":/ { print row; ins = 1 }
+                  { print }
+                ' $menu > $menu.new && mv $menu.new $menu
+
+                # The menu is parsed at runtime, where a syntax error is a menu that
+                # does not open -- no error anyone can act on. Parse it here instead, so
+                # a bad substitution fails the build of whoever wrote it. This caught
+                # both escaping bugs above.
+                ${python3}/bin/python3 -c '
+                import json, re, sys
+                t = open(sys.argv[1]).read()
+                t = re.sub(r"^\s*//.*$", "", t, flags=re.M)
+                # It is jsonc, not json: comments and a trailing comma on the last
+                # entry are both legal and both present upstream. Strip them rather
+                # than report the file as broken, which is what the first version of
+                # this check did -- to a file it had not touched.
+                t = re.sub(r",(\s*[}\]])", r"\1", t)
+                d = json.loads(t)
+                agents = [k for k in d if k.startswith("setup.default.agent.") and k.count(".") == 3]
+                blind = [k for k in agents if "command -v" not in d[k].get("checked", "")]
+                if blind:
+                    sys.exit("agent rows that tick without checking the command: " + repr(blind))
+                if "setup.default.agent.antigravity" not in agents:
+                    sys.exit("the antigravity row did not survive")
+                print("menu ok: %d agent rows, every one install-checked" % len(agents))
+                ' $menu
+
                 # omarchy-agent, twice.
                 #
                 # First: mise activates from the shell rc, and the menu launches an
