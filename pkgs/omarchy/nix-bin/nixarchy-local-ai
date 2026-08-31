@@ -118,6 +118,31 @@ recommend() {
   fi
 }
 
+# Below this, measured rather than guessed, the skills stop working -- and stop
+# in the way that matters.
+#
+# qwen3:1.7b lists the skills correctly and calls tools correctly, so every
+# mechanical check passes. Asked how to install a package, with the nixos skill
+# right there, it answered:
+#
+#   packages.ripgrep = true;
+#   nix-rebuild-incremental
+#
+# Neither exists. It prefixed that with "using the nixos skill", which is the
+# whole problem: the skills made a wrong answer sound sourced. A model that
+# cannot follow them is worse here than no local model, because the failure
+# arrives wearing the machine's own documentation.
+#
+# 4b is where this is set because that is the smallest tier anything above a toy
+# machine gets recommended. It has NOT been shown to be sufficient -- only that
+# 1.7b is not.
+too_small() {
+  case "$1" in
+    *:0.5b | *:0.6b | *:1.5b | *:1.7b | *:2b | *:3b) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 configured=$(nix eval --raw "${NIXARCHY_FLAKE:-/etc/nixos}#nixosConfigurations.$(hostname).config.programs.nixarchy.localAi.model" 2>/dev/null)
 suggested=$(recommend)
 
@@ -147,6 +172,18 @@ if $models_on_ram; then
   say  "  a real install keeps /var on a disk and does not have the problem."
   say  "  To try one here anyway, use the smallest model there is:"
   say  "\n    programs.nixarchy.localAi.model = \"qwen3:1.7b\";\n"
+fi
+
+if too_small "${configured:-$suggested}"; then
+  warn "\033[1m${configured:-$suggested}\033[0m is too small to use this machine's skills."
+  say  "  A model this size lists them and calls tools correctly, and then"
+  say  "  answers from memory anyway -- while saying it used the skill. That is"
+  say  "  worse than no local model: the mistakes arrive looking sourced."
+  say  "\n  Measured on qwen3:1.7b, asked how to install a package with the"
+  say  "  nixos skill available:  packages.ripgrep = true; nix-rebuild-incremental"
+  say  "  Neither of those exists.\n"
+  say  "  Use qwen3:8b if the machine can hold it, or a hosted agent instead:"
+  say  "  \033[1momarchy default agent claude\033[0m\n"
 fi
 
 if [[ -n $configured && $configured != "$suggested" ]]; then
