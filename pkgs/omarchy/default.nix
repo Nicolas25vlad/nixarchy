@@ -540,6 +540,37 @@ stdenvNoCC.mkDerivation {
                   --replace-fail 'hash=$(git -C "$omarchy_path" rev-parse --short HEAD 2>/dev/null || true)' \
                   'echo "${version}"; exit 0'
 
+                # The splash said "Omarchy", on a machine that is not Omarchy.
+                #
+                # etc/fastfetch/config.jsonc prints the OS line from a literal
+                # `echo "Omarchy $version"`, so every new terminal on a nixarchy machine
+                # announced itself as the thing it is a port of. The version stays, and
+                # stays labelled as Omarchy's, because that is the honest reading: this
+                # is nixarchy, running Omarchy's tree at that version, and both halves
+                # are worth knowing when something upstream behaves oddly.
+                substituteInPlace $out/share/omarchy/etc/fastfetch/config.jsonc \
+                  --replace-fail 'version=$(omarchy-version) && echo \"Omarchy $version\"' 'version=$(omarchy-version) && echo \"Nixarchy (Omarchy $version)\"'
+
+                # And the line under it said "unknown".
+                #
+                # omarchy-version-channel decides between "stable" and "edge" by grepping
+                # /etc/pacman.conf for Omarchy's package mirrors. There is no pacman.conf
+                # here, so both halves fell through to their "unknown" branch and the
+                # splash carried a permanent unknown under the OS line.
+                #
+                # The nixpkgs this system was built from is the honest analogue -- it is
+                # the answer to the same question, "which package set am I on" -- and
+                # nixos-version is on PATH for every user. Falling back to exiting 1
+                # rather than printing something: fastfetch drops a command module that
+                # fails, which is better than a line that says nothing.
+                #
+                # Spliced in front of the FIRST grep rather than before the final
+                # comparison. Put after them, the pacman lookups still run and still
+                # write "No such file or directory" to stderr on every new terminal --
+                # answering correctly while looking broken.
+                substituteInPlace $out/share/omarchy/bin/omarchy-version-channel \
+                  --replace-fail 'if grep -q "https://stable-mirror.omarchy.org/" /etc/pacman.d/mirrorlist; then' 'nixos-version 2>/dev/null | cut -d" " -f1 || exit 1; exit 0; if grep -q "https://stable-mirror.omarchy.org/" /etc/pacman.d/mirrorlist; then'
+
                 # Vulkan was never detected.
                 #
                 # Upstream looks in /usr/share/vulkan/icd.d, which does not exist on NixOS:
