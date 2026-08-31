@@ -16,16 +16,68 @@ nix build github:olafkfreund/nixarchy#iso
 sudo dd if=result/iso/nixarchy-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
-Boot it. There is no boot menu and no login prompt; the installer is what comes
-up. It asks for a keyboard layout, a username and password, a hostname, a
-timezone and a disk — the same questions upstream asks, in the same order.
+Boot it. There is no boot menu and no login prompt — the installer is what
+comes up, and it asks the same questions Omarchy asks, in the same order.
 
-![The installer asks the same questions Omarchy does](../img/installer/01-keyboard.png)
+### 1. Keyboard
 
-Encryption is on unless you press Ctrl+C at the overwrite warning, and one
-password serves your user, root and the disk alike.
+![Selecting a keyboard layout](../img/installer/step-01-keyboard.png)
+
+Forty-five layouts, English variants first. Not the several hundred files under
+`share/keymaps` — `mod-dh-ansi-us-fatz-wide` is not a thing to put in front of
+someone who has just booted a disk.
+
+### 2. Your account
+
+![Username, then password twice](../img/installer/step-02-account.png)
+
+One password serves your user, root **and** the disk. That is upstream's
+choice and it is the right one: the passphrase you type at boot is the one that
+logs you in, so there is nothing extra to remember.
+
+### 3. Hostname
+
+![Naming the machine](../img/installer/step-03-hostname.png)
+
+### 4. Timezone
+
+![Filtering the timezone list](../img/installer/step-04-timezone.png)
+
+Type to filter. Return with nothing typed accepts `UTC`.
+
+### 5. The disk
+
+![Choosing the install disk](../img/installer/step-05-disk.png)
+
+Only disks big enough to hold a desktop, and never the medium you booted from.
+Anything under 8 GiB is left out — as are floppy controllers and compressed RAM
+devices, both of which `lsblk` cheerfully calls a disk.
+
+### 6. Encryption
+
+![The overwrite warning](../img/installer/step-06-encrypt.png)
+
+**This is the destructive step.** Encryption is the default and Ctrl+C is the
+way out of it — the safe answer is the one you get by doing nothing. Answering
+*No* aborts rather than installing unencrypted, because "no" to a question about
+overwriting a disk should never mean "do it anyway, differently".
+
+### 7. Check it over
+
+![The summary table](../img/installer/step-07-summary.png)
+
+Everything you chose, once, before anything is written. *No* sends you back to
+the first question.
+
+### Then it gets out of the way
 
 ![The whole install, four minutes at four-second intervals](../img/installer/install.gif)
+
+The log goes to `/var/log/nixarchy-install.log` rather than the screen. A wall
+of store paths tells nobody anything they can act on, and it makes an ordinary
+install look like something going wrong. If it *does* go wrong, the log stops
+hiding: the failure screen puts the last of it on screen with the path to the
+rest.
 
 ![Installed nixarchy in 7m 32s](../img/installer/03-finish.png)
 
@@ -38,10 +90,20 @@ disk, and your app selection. Edit it, run `nh os switch`. A rebuild immediately
 after installing builds nothing, because everything the installer did is
 described in those files rather than done behind them.
 
-Two things to know first. **The image needs a network:** it downloads the
-closure rather than carrying it, so an install is as fast as your connection.
-Making it offline is the next phase of the work. And it is **UEFI only** — the
-layout is an ESP with systemd-boot, and there is no BIOS path.
+Three things to know first.
+
+**The image needs a network.** It downloads the closure rather than carrying it,
+so an install is as fast as your connection. Making it offline is the next phase
+of the work.
+
+**It is UEFI only.** The layout is an ESP with systemd-boot, and there is no BIOS
+path — the installer checks and refuses rather than failing at the end.
+
+**A Bluetooth keyboard cannot unlock an encrypted disk.** The passphrase prompt
+happens in the initrd, before Bluetooth exists, so a keyboard that pairs once the
+desktop is up has no way to type into it — the machine simply waits. Upstream's
+manual carries the same warning because people hit it. Use a wired keyboard for
+the first boot, or choose an unencrypted install with Ctrl+C.
 
 ## Or: add it to NixOS you already run
 
