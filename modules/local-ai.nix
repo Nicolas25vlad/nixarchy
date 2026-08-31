@@ -102,6 +102,33 @@ in
       '';
     };
 
+    allowCpu = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Run the model on the CPU anyway, with no GPU present.
+
+        Off, and the build fails rather than warns, because a warning scrolls
+        past and this does not degrade gracefully -- it produces something that
+        looks like it works and is unusable. Measured on eight cores with
+        qwen3:8b, one question through pi:
+
+          500 | 4m59s      client gave up
+          200 | 1m48s
+          200 | 8m58s
+          200 | 7m28s
+          500 | 1m38s      client gave up
+
+        Five round trips, twenty-five minutes, no answer. Nothing was
+        misconfigured: the context held, the prompt fit, three requests
+        returned 200. An agent simply needs several turns, and each turn is
+        minutes.
+
+        Turn this on for a benchmark, a test rig, or a machine where you have
+        decided a twenty-minute answer is worth having. Not for daily use.
+      '';
+    };
+
     contextWindow = lib.mkOption {
       type = lib.types.nullOr lib.types.ints.positive;
       # 32k, after trying both extremes and watching each fail.
@@ -253,6 +280,40 @@ in
     environment.systemPackages =
       lib.optional (builtins.elem "opencode" aiCfg.agents) pkgs.opencode
       ++ lib.optional (builtins.elem "pi" aiCfg.agents) pkgs.pi-coding-agent;
+
+    assertions = [
+      {
+        assertion = acceleration != "cpu" || aiCfg.allowCpu;
+        message = ''
+          programs.nixarchy.localAi is enabled, but this configuration declares
+          no GPU -- so the model would run on the CPU, and that does not work
+          well enough to ship.
+
+          Measured, on eight cores with qwen3:8b, asking one question through
+          pi: five round trips, twenty-five minutes, and no answer. Nothing was
+          broken. An agent needs several turns and each turn takes minutes.
+
+          The fix is a GPU. Declare it and this resolves itself, because the
+          Ollama build is derived from what the machine says it has:
+
+            NVIDIA   services.xserver.videoDrivers = [ "nvidia" ];
+                     hardware.nvidia.open = true;   # Turing (RTX 20xx) or newer
+
+            AMD      hardware.amdgpu.opencl.enable = true;
+
+          See the nixos-gpu skill, which covers both properly.
+
+          Without one, use a hosted agent -- they are what this machine's skills
+          were written for, and they answer in seconds:
+
+            omarchy default agent claude
+
+          To run on the CPU regardless, on a test rig or a benchmark, say so:
+
+            programs.nixarchy.localAi.allowCpu = true;
+        '';
+      }
+    ];
 
     warnings =
       lib.optional (acceleration == "cpu" && aiCfg.model != "qwen3:4b") ''

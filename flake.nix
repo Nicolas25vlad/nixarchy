@@ -496,6 +496,11 @@
                 programs.nixarchy.localAi = {
                   enable = lib.mkDefault true;
                   model = lib.mkDefault "qwen3:8b";
+                  # A VM has no GPU, and localAi refuses to build without one
+                  # unless told. This is the case the option exists for: a rig
+                  # for exercising the wiring, where a slow answer is still an
+                  # answer and nobody is trying to work.
+                  allowCpu = lib.mkDefault true;
                 };
               }
             )
