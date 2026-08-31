@@ -1088,6 +1088,21 @@ in
       type = lib.mkOverride 1250 "fcitx5";
     };
 
+    # fcitx5 says this itself, in a notification on every login:
+    #
+    #   Wayland Diagnose -- Detect GTK_IM_MODULE being set and Wayland Input
+    #   method frontend is working. It is recommended to unset GTK_IM_MODULE.
+    #
+    # nixpkgs sets GTK_IM_MODULE and QT_IM_MODULE only when waylandFrontend is
+    # off, which is its default (i18n/input-method/fcitx5.nix). Those two are
+    # the X11-era route: with them set, GTK sends input through the legacy
+    # module instead of the Wayland input-method protocol, which is both worse
+    # and, in GTK4 and Electron apps, sometimes nothing at all.
+    #
+    # Nixarchy is Wayland-only -- there is no session here where the X11
+    # default is the right one -- so this is set rather than left to the user.
+    i18n.inputMethod.fcitx5.waylandFrontend = lib.mkIf usingFcitx5 (lib.mkDefault true);
+
     # The two of upstream's four that the nixpkgs module does not set. It has
     # no opinion on either, and SDL applications and the older INPUT_METHOD
     # convention read nothing else.
