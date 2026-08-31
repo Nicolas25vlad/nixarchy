@@ -104,18 +104,35 @@ in
 
     contextWindow = lib.mkOption {
       type = lib.types.nullOr lib.types.ints.positive;
-      default = null;
+      # 32k, after trying both extremes and watching each fail.
+      #
+      # Forcing 64k OOM-killed the service on an 8GB machine. Leaving it null,
+      # to let Ollama size it from what it can see, looked like the honest fix
+      # -- until a CPU machine with no VRAM to see got the bottom tier:
+      #
+      #   llama_context: n_ctx_seq (4096) < n_ctx_train (40960)
+      #   [GIN] 500 | 4m41s | POST "/v1/chat/completions"
+      #
+      # 4096 does not hold an agent's system prompt plus a skill, so the request
+      # ground for four minutes and then failed. Ollama's heuristic is sound for
+      # chat and wrong for this, because it cannot know what the client intends
+      # to put in the window.
+      #
+      # 32k is affordable now that the cache below is quantised -- q8_0 and
+      # flash attention took a measured 3584MiB down to 238MiB -- and it is
+      # enough for a skill and a conversation about it.
+      default = 32768;
       example = 65536;
       description = ''
-        Context window in tokens, or null to let Ollama decide.
+        Context window in tokens, or null to let Ollama choose.
 
-        Null by default, and that is not laziness: Ollama already sizes the
-        context from the memory it can see -- its own help says "4k/32k/256k
-        based on VRAM" -- so setting this unconditionally replaces a figure
-        that adapts with one that cannot.
+        Null is worse than it sounds. Ollama picks "4k/32k/256k based on VRAM"
+        (its own help), which is sensible for chat and wrong for an agent: a
+        machine with no GPU gets 4096, which cannot hold a system prompt and a
+        skill together, and the request fails after minutes of work rather than
+        immediately.
 
-        Doing exactly that is how this module got the service OOM-killed on an
-        8GB machine. The cost is not the weights, it is the KV cache:
+        The cost of a larger window is not the weights, it is the KV cache:
 
           llama_kv_cache: CPU KV buffer size = 3584.00 MiB
 
