@@ -376,6 +376,10 @@
         # Boot the smoke test: `nix run .#vm`
         vm = self.nixosConfigurations.vm.config.system.build.vm;
 
+        # The same machine with room for a model: `nix run .#vm-big`.
+        # 32GB, 8 cores, and a real disk rather than a tmpfs root.
+        vm-big = self.nixosConfigurations.vm-big.config.system.build.vm;
+
         # The bootable image: boot it and answer the questions. Still online
         # at this stage -- #15 bakes the closure onto it, #16 takes the
         # network away.
@@ -433,6 +437,68 @@
             self.nixosModules.nixarchy
             home-manager.nixosModules.home-manager
             ./vm/configuration.nix
+          ];
+        };
+
+        # The same VM with room to run a model.
+        #
+        # `.#vm` is a smoke test and is sized like one: 8GB, and an ephemeral
+        # root, which is right for catching a broken desktop and wrong for
+        # anything to do with programs.nixarchy.localAi. Two reasons, and the
+        # second is the one that is not obvious:
+        #
+        #   - 8GB does not hold a useful model. qwen3:8b is 5.2GB of weights
+        #     before any cache.
+        #
+        #   - diskImage = null puts the root on a tmpfs, so the weights live in
+        #     RAM. They are then paid for twice, once to store and once to load,
+        #     out of the same pool -- and the service is OOM-killed while every
+        #     visible number says it had room. Observed, not theorised.
+        #
+        # So this one has a real disk, which also means a pulled model survives
+        # a restart rather than being re-downloaded every time.
+        #
+        #   nix run .#vm-big
+        #   ssh -p 2224 omarchy@localhost      (password: omarchy)
+        #
+        # It writes nixarchy-vm-big.qcow2 into the working directory and REUSES
+        # it, which is the point here and is exactly what .#vm avoids. Delete
+        # that file to start clean.
+        vm-big = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = { inherit inputs; };
+          modules = [
+            self.nixosModules.nixarchy
+            home-manager.nixosModules.home-manager
+            ./vm/configuration.nix
+            (
+              { lib, ... }:
+              {
+                virtualisation = {
+                  memorySize = lib.mkForce 32768;
+                  cores = lib.mkForce 8;
+                  diskSize = lib.mkForce 131072; # 128GB: several models, comfortably
+                  diskImage = lib.mkForce "./nixarchy-vm-big.qcow2";
+                  # A different port, so this and .#vm can run side by side.
+                  forwardPorts = lib.mkForce [
+                    {
+                      from = "host";
+                      host.port = 2224;
+                      guest.port = 22;
+                    }
+                  ];
+                };
+
+                # Sized for the machine rather than inherited from the smoke
+                # test: with 32GB the 8b tier is comfortable, and 8b is the
+                # smallest size shown to follow the skills rather than answer
+                # from memory while claiming to have read them.
+                programs.nixarchy.localAi = {
+                  enable = lib.mkDefault true;
+                  model = lib.mkDefault "qwen3:8b";
+                };
+              }
+            )
           ];
         };
 
