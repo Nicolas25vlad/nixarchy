@@ -244,11 +244,31 @@ let
           ("update", "menu-update"),
           ("style", "menu-style"),
           ("system", "menu-system"),
+          # This port's own rows. setup.default.agent is upstream's, but the
+          # ticks are ours: they now ask whether the command exists rather than
+          # only whether it was picked, so an unticked list is the honest
+          # picture of a machine with no agent installed.
+          ("setup.default.agent", "menu-default-agent"),
+          ("trigger", "menu-trigger"),
       ]:
           user(f"omarchy-menu summon {route}", timeout=30)
           machine.sleep(5)
           shot(label, hold=8)
       user("omarchy-menu close", timeout=20)
+
+      # Trigger > Ask, which is hidden until a default agent is chosen -- the
+      # rows launch an agent, and a menu of things that cannot work is worse
+      # than no menu. Written directly rather than through
+      # omarchy-default-agent, because that command would go on to install the
+      # agent, and this only needs the row to be visible.
+      user("mkdir -p ~/.config/omarchy/defaults", timeout=20)
+      user("echo claude > ~/.config/omarchy/defaults/agent", timeout=20)
+      user("omarchy-menu summon trigger.ask", timeout=30)
+      machine.sleep(5)
+      shot("menu-ask", hold=10)
+      user("omarchy-menu close", timeout=20)
+      user("rm -f ~/.config/omarchy/defaults/agent", timeout=20)
+
       # Escape as well as close: `style.theme` summons the theme *switcher*, a
       # separate carousel that omarchy-menu close leaves up. It stayed pinned
       # over every later frame -- a shot labelled theme-gruvbox showing the

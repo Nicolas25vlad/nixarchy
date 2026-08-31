@@ -66,6 +66,35 @@ the machine will then refuse to build.
 
 See **[other packages](manual/other-packages)** for the whole flow.
 
+## An agent that knows this machine
+
+Omarchy symlinks its agent skills into every harness's skill directory. Upstream
+ships one, written for Arch; nixarchy ships ten, written for NixOS — the desktop,
+packages, GPUs, services, secrets, performance, security, log triage, and getting
+the configuration into git.
+
+That matters more than it sounds. A model asked how to install a package on NixOS
+will confidently invent an answer; the same model handed the `nixos` skill routes
+to `nixarchy-pkg-add` and a rebuild. The skills were written against the modules
+on disk rather than from memory, which is how they caught two options current
+models still write and that no longer exist.
+
+**Menu ▸ Trigger ▸ Ask** turns them into ten things you can click — *What's
+wrong?*, *Make it faster*, *Am I exposed?*, *Disk is full* — each routed to the
+skill that answers it, through whichever agent you have chosen.
+
+![The Ask menu](img/desktop/menu-ask.jpg)
+
+```nix
+programs.nixarchy.localAi.enable = true;
+```
+
+runs the whole thing locally against Ollama, with the accelerator derived from
+the GPU your configuration already declares. It refuses to build without one,
+and the refusal explains why with the measurements behind it.
+
+See **[the AI page](manual/ai)**.
+
 ## → [The nixarchy manual](manual/)
 
 What is different here, and only that. Omarchy's manual covers the desktop; this

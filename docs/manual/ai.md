@@ -38,13 +38,26 @@ location, so most harnesses load it automatically. nixarchy keeps the
 mechanism — `omarchy-provision-user` symlinks every directory under
 `$OMARCHY_PATH/default/agents/skills/` into `~/.claude/skills`,
 `~/.agents/skills`, `~/.codex/skills` and `~/.pi/agent/skills` — but ships
-three skills instead of one:
+ten skills instead of one:
 
 | skill | owns |
 |---|---|
 | `nixarchy` | the desktop: `~/.config/hypr/`, `~/.config/omarchy/`, terminal configs, themes, keybindings, the bar, idle and lock, the `omarchy` commands |
 | `nixos` | packages and everything outside `~/.config/`: services, users, hardware, boot, networking, fonts, Home Manager, the flake, rebuilds and rollback |
+| `nixos-gpu` | NVIDIA/CUDA, AMD/ROCm, Intel, and the three layers a working GPU actually needs |
+| `nixos-ai` | Ollama, Open WebUI, llama.cpp, model sizing, pointing an agent at a local endpoint |
+| `nixos-services` | systemd units, firewall and ports, containers, and reading a failed rebuild |
+| `nixos-secrets` | agenix, sops-nix, `*File` options, and why a leaked secret is rotated rather than deleted |
+| `nixos-performance` | kernel, zram, governors, storage, Nix build speed, boot time |
+| `nixos-security` | firewall and nftables, SSH, sudo, systemd sandboxing, kernel hardening |
+| `nixos-doctor` | the whole-machine sweep to run before forming a theory |
+| `nixos-config-repo` | getting the configuration into git, and keeping it there |
 | `diagnose-crash` | working out why a process dumped core, and where to report it if it is a distribution bug |
+
+Each is written against the modules on the disk rather than from memory. That is
+not fastidiousness: it caught `services.ollama.acceleration`, which was removed,
+and `services.ollama.models`, which was renamed to `modelsDir`. Both are still
+written confidently by current models, and both fail evaluation.
 
 The split follows the boundary the rest of this manual keeps drawing: what is
 under `~/.config/` is yours and takes effect on save; what is declared in the
@@ -116,3 +129,77 @@ ready to run `omarchy reinstall configs` if the agent makes a mess; here
 shim refuses. For desktop config, `omarchy refresh <app>` restores a stock
 file. For anything the agent changed in the flake,
 `sudo nixos-rebuild --rollback switch` puts back the previous generation.
+
+## Asking the machine to do something with them
+
+A skill only helps if something loads it. **Menu ▸ Trigger ▸ Ask** is ten rows
+that do — *What's wrong?*, *Make it faster*, *Am I exposed?*, *Disk is full*,
+*GPU not working*, *What changed?*, *Back up my config*, *Install something*,
+*Ask anything* — each routed to the skill that answers it.
+
+![The Ask menu](../img/desktop/menu-ask.jpg)
+
+The prompts live in `nixarchy-ask`, not in the menu JSON, so they can be read
+and corrected as text. Each names its skill, because a model follows a skill it
+has been handed far more reliably than it chooses one from nine descriptions;
+moving that decision out of the model and into a file makes it reviewable. Every
+prompt also says measure first, propose before changing.
+
+None of them names an agent. They go through `omarchy-agent-prompt`, so the same
+row works with Claude, Codex, opencode, Pi or a local model, and keeps working
+when you switch.
+
+![The Default Agent menu](../img/desktop/menu-default-agent.jpg)
+
+Choosing one installs it declaratively — `nixarchy-pkg-add` and a rebuild —
+rather than fetching a binary into `~/.local` that nothing records. Antigravity
+is in the list because Google deprecated `gemini-cli` in its favour.
+
+Nothing is ticked there because nothing is installed on that machine. Upstream's
+tick asks whether an agent was *picked*, which on Arch is the same question;
+here a rebuild sits in between, so it asks whether the command exists.
+
+## Running the model locally
+
+```nix
+programs.nixarchy.localAi.enable = true;
+```
+
+Runs Ollama and writes provider configuration for opencode and Pi, so the skills
+above work with no account and no network. Which Ollama gets built is derived
+from the GPU the configuration already declares — `hardware.nvidia` means CUDA,
+`hardware.amdgpu` means ROCm — so it follows the machine rather than needing to
+be told twice.
+
+Provider files are *merged* into `~/.config/opencode/opencode.json` and
+`~/.pi/agent/models.json` rather than owned, because Omarchy already writes to
+the first one and home-manager refuses to clobber it.
+
+**Without a GPU it refuses to build.** Measured on eight cores with `qwen3:8b`,
+one question through an agent took five round trips and twenty-five minutes and
+still did not finish. Nothing was misconfigured — an agent simply needs several
+turns and each turn is minutes. Set `allowCpu = true` if you want it anyway.
+
+`nixarchy local-ai` pulls the model, reads the actual VRAM, recommends a size
+and tells you the measured tokens per second, which is a better basis for
+expectation than a table. It will not recommend anything below 4b: `qwen3:1.7b`
+lists the skills and calls tools correctly, then answers from memory while
+saying it used them — which is worse than no local model, because the mistake
+arrives looking sourced.
+
+## Putting the configuration in git
+
+```
+nixarchy config repo
+```
+
+The installer leaves `/etc/nixos` as a repository with one staged tree and no
+commit, because committing needs an identity that is not an installer's to
+choose. This finishes it: identity, a `.gitignore` that knows encrypted secrets
+belong in the repo and plaintext ones do not, a scan for secrets *before* the
+first commit, private-or-public as a decision, a remote through `gh` or `glab`,
+and an eval-only CI workflow.
+
+It is offered once as a notification after an agent is set up, and a
+configuration that is already committed and pushed marks itself done rather than
+asking again.

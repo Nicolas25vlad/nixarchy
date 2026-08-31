@@ -57,6 +57,12 @@ shot 11-learn learn
 shot 12-style style
 shot 13-setup setup
 shot 14-system system
+# The rows this port adds. `trigger.ask` is hidden until a default agent is
+# chosen -- shot() reports a menu that will not open rather than capturing the
+# wrong screen, so an empty 20-ask.png means no agent was set on the VM.
+shot 19-trigger trigger
+shot 20-ask trigger.ask
+shot 21-setup-agent setup.default.agent
 menu_open && toggle || true
 
 echo

@@ -124,13 +124,29 @@ this repo replaced with one that deliberately refuses. Shipping them unchanged m
 an agent confidently doing imperative things the next rebuild wipes, which is the
 one failure mode that looks like success.
 
-So three skills ship here instead:
+So ten skills ship here instead:
 
 | skill | owns |
 |---|---|
 | **`nixarchy`** | The desktop: Hyprland, the bar, themes, capture. Upstream's `omarchy` skill, renamed and corrected |
-| **`nixos`** | Packages and system changes: `apps.nix`, the Install menu, `nixos-rebuild`, generations, rollback, option search. New — upstream has no equivalent because it does not need one |
+| **`nixos`** | Packages and system changes: `apps.nix`, the Install menu, `nixos-rebuild`, generations, rollback, option search |
+| **`nixos-gpu`** | NVIDIA/CUDA, AMD/ROCm, Intel — as three layers, because almost every "the GPU does not work" report is one specific layer and skipping to the last one is why they stay unsolved |
+| **`nixos-ai`** | Ollama, Open WebUI, llama.cpp, model sizing, pointing an agent at a local endpoint |
+| **`nixos-services`** | systemd units, the firewall, containers, why a service will not start, why a rebuild will not evaluate |
+| **`nixos-secrets`** | agenix, sops-nix, `*File` options, `LoadCredential`, and why a leaked secret is rotated rather than deleted |
+| **`nixos-performance`** | Kernel choice, zram and swappiness, governors, storage, Nix build speed, boot time |
+| **`nixos-security`** | Firewall and nftables, SSH, sudo and the groups that are root in a costume, systemd sandboxing, kernel hardening |
+| **`nixos-doctor`** | The sweep to run *before* you have a theory: failed units, `-p err`, disk, memory, and what changed between generations |
+| **`nixos-config-repo`** | Getting the configuration into git and keeping it there, and the two things that bite: untracked files are invisible to the build, and `/etc/nixos` is root-owned |
 | **`diagnose-crash`** | Upstream's, patched. Keeps its name because `omarchy-agent-crash` reads that path literally |
+
+Every one is written against the modules on this disk rather than from memory,
+which is not a stylistic preference — it caught two options that current models
+still write confidently and that fail evaluation:
+`services.ollama.acceleration` was **removed** (the package chooses the
+accelerator now), and `services.ollama.models` was **renamed** to `modelsDir`.
+Both are documented as such, and `nixos-services` teaches reading a module's
+`mkRenamedOptionModule` block as the general form of that fix.
 
 The split is the point. `nixarchy`'s decision framework used to answer "is it a
 package install?" with a pacman command; now it hands off to `nixos`, which opens
@@ -160,6 +176,132 @@ so an Omarchy bump that rewords a line this depends on fails the build rather th
 quietly restoring Arch instructions. CI additionally asserts that no skill code
 block contains a pacman, yay, `/usr/share/omarchy` or Arch-debuginfod line, because
 prose may contrast with Arch on purpose but a fenced block is what an agent copies.
+
+## Ask the machine
+
+Skills only help if something loads them. **Menu ▸ Trigger ▸ Ask** is ten rows
+that do, each one routed to the skill that answers it:
+
+![The Ask menu](docs/screenshots/20-ask.jpg)
+
+| row | skill |
+|---|---|
+| What's wrong? | `nixos-doctor` |
+| Make it faster | `nixos-performance` |
+| Am I exposed? | `nixos-security` |
+| Disk is full | `nixos-doctor` |
+| GPU not working | `nixos-gpu` |
+| What changed? | `nixos` + `nixos-doctor` |
+| Back up my config | `nixos-config-repo` |
+| Install something | `nixos` |
+| Ask anything | whichever fits |
+
+The prompts live in `nix-bin/nixarchy-ask`, not in the menu JSON, so they can be
+read and corrected as text. Each one **names the skill**, and that is the whole
+trick: a model is much better at following a skill it has been handed than at
+choosing one from nine descriptions. Moving the routing out of the model and
+into a file makes it reviewable, and makes the same row work with a frontier
+agent and a local one.
+
+Every prompt also says measure first and propose before changing. An agent that
+reaches for a fix before reading anything is the failure these tasks invite.
+
+Nothing in it names an agent: it goes through `omarchy-agent-prompt`, which
+launches whichever one you have chosen. The rows are hidden until you choose
+one, because a menu of things that cannot work is worse than no menu.
+
+![The Default Agent menu](docs/screenshots/21-setup-agent.jpg)
+
+Agents are installed the way everything else here is: picking one adds it to the
+selection and rebuilds, rather than downloading a binary into `~/.local` that no
+file records and the next rebuild does not reproduce. Antigravity is in the list
+because Google deprecated `gemini-cli` in its favour.
+
+Nothing is ticked above because nothing is installed on that machine. Upstream's
+tick asks only whether an agent was *picked*, which on Arch is the same question
+— installation is immediate there. Here a rebuild sits in between, so the tick
+asks whether the command exists, and a half-finished choice cannot look
+finished.
+
+## The configuration in git
+
+The installer leaves `/etc/nixos` as a git repository with one staged tree and
+no commit — deliberately, because `git commit` needs an identity and choosing
+yours is not an installer's business. What that leaves is a machine whose entire
+definition has no history and exists on exactly one disk.
+
+```
+nixarchy config repo
+```
+
+walks out of that: identity, a `.gitignore` that knows encrypted secrets belong
+*in* the repo and plaintext ones do not, a **scan for secrets before the first
+commit**, public-or-private as a decision rather than a default, the remote via
+`gh`/`glab` (fetched on demand — neither is in the closure), and an eval-only CI
+workflow.
+
+Eval-only on purpose: `nix flake check --no-build` catches renamed options, type
+errors and typos, which is nearly everything that actually breaks, while a full
+system build on a free runner takes hours and regularly runs out of disk.
+
+A notification offers this once, on a boot after you have set up an agent, and
+only when there is something to say — a configuration already committed and
+pushed marks itself done and never asks again.
+
+## A local model
+
+`programs.nixarchy.localAi` runs Ollama and points opencode and pi at it, so the
+skills work with no account, no key and no network.
+
+```nix
+programs.nixarchy.localAi.enable = true;
+```
+
+Which Ollama gets built is read off the configuration rather than probed for.
+Nix evaluates before the machine runs, so there is no hardware to look at — and
+no need, because a machine with an NVIDIA card has already said so in
+`hardware.nvidia` and an AMD one in `hardware.amdgpu`:
+
+| declared | build |
+|---|---|
+| `services.xserver.videoDrivers = [ "nvidia" ]` | `ollama-cuda` |
+| `hardware.amdgpu.opencl.enable = true` | `ollama-rocm` |
+| neither | refuses to build — see below |
+
+**It will not run on a CPU unless you insist**, and that is measured rather than
+assumed. On eight cores with `qwen3:8b`, one question through an agent:
+
+```
+500 | 4m59s     the client gave up waiting
+200 | 1m48s
+200 | 8m58s
+200 | 7m28s
+500 | 1m38s     the client gave up waiting
+```
+
+Five round trips, twenty-five minutes, no answer. Nothing was misconfigured —
+the context held and three requests succeeded. An agent needs several turns and
+on a CPU each turn is minutes. A warning would scroll past, so the build fails
+instead, and the message names the three ways out: declare the GPU, use a hosted
+agent, or `allowCpu = true` and accept it.
+
+Model weights are not pulled during activation either. `nixarchy local-ai` does
+it where there is a terminal to ask in, and where the VRAM can actually be read
+— evaluation cannot size a model, and a model larger than the budget does not
+fail, it spills into system memory and crawls.
+
+Two findings from getting this working, both of which cost a day and neither of
+which is in any documentation:
+
+- **A forced context window is worse than no opinion, and no opinion is worse
+  than a bounded one.** 64k OOM-killed the service on 8GB; letting Ollama choose
+  gave 4096 on a machine with no VRAM, which cannot hold a system prompt and a
+  skill together. It is pinned to 32k, which flash attention and a `q8_0` cache
+  make affordable — a measured 3584 MiB of KV cache became 238 MiB.
+- **A small model is not a small frontier model.** `qwen3:1.7b` lists the skills
+  correctly and calls tools correctly, then answers from memory anyway while
+  saying it used the skill. `nixarchy local-ai` refuses to recommend anything
+  below 4b for that reason.
 
 ## Installing apps
 
@@ -888,6 +1030,25 @@ can be inspected and driven from the host.
 previous run's state — Omarchy persists every notification under
 `~/.local/state/omarchy/notifications/history/` and replays it on start, so
 fixed bugs kept reappearing from a stale disk.
+
+### A VM with room for a model
+
+`.#vm` is a smoke test and is sized like one, which makes it the wrong machine
+for `programs.nixarchy.localAi` in two ways. 8GB does not hold a useful model —
+`qwen3:8b` is 5.2GB of weights before any cache. And the ephemeral root is a
+*tmpfs*, so the weights live in RAM: paid for once to store and once to load,
+out of the same pool, and the service is OOM-killed while every visible number
+says it had room.
+
+```sh
+QEMU_OPTS="-device virtio-vga-gl -display gtk,gl=on" \
+  nix run github:olafkfreund/nixarchy#vm-big
+```
+
+32GB, 8 cores, a real 128GB disk, sshd on `localhost:2224` so it runs beside
+`.#vm`, and `localAi` on with `qwen3:8b`. It keeps its qcow2 between runs — the
+opposite of what `.#vm` wants, and exactly right here, because a pulled model
+then survives a restart instead of being downloaded again.
 
 ## Screenshots and the screencast
 
