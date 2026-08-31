@@ -792,6 +792,24 @@ stdenvNoCC.mkDerivation {
                 # an upstream edit to a line we depend on fails the build instead of
                 # quietly shipping Arch instructions again.
                 #
+                # omarchy-agent, twice.
+                #
+                # First: mise activates from the shell rc, and the menu launches an
+                # agent through `bash -c` inside a floating terminal, which sources no
+                # rc. An agent mise had installed perfectly was therefore reported as
+                # "not installed" by the very next line, while running fine one shell
+                # over. Only the two agents nixpkgs has no package for still come from
+                # mise -- see nix-bin/omarchy-default-agent -- but for those this is
+                # the difference between a working menu entry and a lie.
+                #
+                # Second: Antigravity. Google deprecated gemini-cli in favour of it,
+                # mise carries it as a prebuilt `aqua:` binary, and upstream's launcher
+                # has no case for a name it has never heard of -- which is an
+                # "Unsupported default agent" rather than an agent.
+                substituteInPlace $out/share/omarchy/bin/omarchy-agent \
+                  --replace-fail 'agent=$(omarchy-default-agent)' '[ -d "$HOME/.local/share/mise/shims" ] && PATH="$HOME/.local/share/mise/shims:$PATH"; agent=$(omarchy-default-agent)' \
+                  --replace-fail 'omp)' 'antigravity) command=(agy) ;; omp)'
+
                 # Every --replace-fail pattern AND replacement below is a single line
                 # on purpose. `nix fmt` re-indents multi-line strings inside this
                 # expression, which silently breaks a literal match against file
