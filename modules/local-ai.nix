@@ -235,13 +235,25 @@ in
 
     environment.systemPackages =
       lib.optional (builtins.elem "opencode" aiCfg.agents) pkgs.opencode
-      ++ lib.optional (aiCfg.contextWindow != null && aiCfg.contextWindow < 65536 && builtins.elem "opencode" aiCfg.agents) ''
+      ++ lib.optional (builtins.elem "pi" aiCfg.agents) pkgs.pi-coding-agent;
+
+    warnings =
+      lib.optional (acceleration == "cpu" && aiCfg.model != "qwen3:4b") ''
+        programs.nixarchy.localAi: no GPU was found in this configuration, so
+        the model runs on the CPU. ${aiCfg.model} will answer at a few tokens a
+        second there. qwen3:4b is the one that is comfortable without a GPU.
+      ''
+      ++ lib.optional (
+        aiCfg.contextWindow != null
+        && aiCfg.contextWindow < 65536
+        && builtins.elem "opencode" aiCfg.agents
+      ) ''
         programs.nixarchy.localAi: opencode needs a context window of at least
         65536 and this is pinned to ${toString aiCfg.contextWindow}, so opencode
-        will not hold a session. pi has no such floor.
+        will not hold a session against the local model. pi has no such floor.
 
-        Leaving contextWindow null lets Ollama size it from available memory,
-        which is the right answer on almost every machine.
+        Leaving contextWindow null lets Ollama size it from the memory it can
+        see, which is the right answer on almost every machine.
       '';
   };
 }
