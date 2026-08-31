@@ -13,6 +13,24 @@ let
   cfg = config.programs.nixarchy;
   omarchyPath = "${cfg.package}/share/omarchy";
 
+  # The local model is configured on the SYSTEM side -- it is a service and a
+  # package set -- but its provider files live in a home. Read across rather
+  # than declared twice, so the address the server binds and the address the
+  # agents dial cannot disagree.
+  #
+  # `enable = false` when there is no osConfig: a standalone home-manager user
+  # has no NixOS module to have turned this on, so every option below it is
+  # inert and nothing is written.
+  localAi =
+    {
+      enable = false;
+      agents = [ ];
+      model = "";
+      contextWindow = 0;
+      resolved.endpoint = "";
+    }
+    // (osConfig.programs.nixarchy.localAi or { });
+
   # Through the overlay on *your* nixpkgs, for the same reason cfg.package's
   # default takes that route: inputs.self.packages is built from nixarchy's own
   # nixpkgs, and a second copy of anything in home.packages is a buildEnv
@@ -619,6 +637,143 @@ in
         exec ${cfg.package}/bin/omarchy-cursor-set
       '';
     };
+
+    # Provider files for the local model, when the system module turned it on.
+    #
+    # Written here rather than in modules/local-ai.nix because only the home
+    # module knows where a user's home is, and read back out of osConfig so the
+    # address the server binds and the address the agents dial cannot drift.
+    # Guarded by `or null` throughout: home.nix is usable on its own, without
+    # the NixOS module, and then there is no osConfig to read.
+    #
+    # Both agents get a file whether or not either is the current default. They
+    # are a few hundred bytes, and the alternative is that switching agent in
+    # the menu silently produces one that cannot reach the model.
+    # opencode's provider, merged into the file rather than owning it.
+    #
+    # ~/.config/opencode/opencode.json already exists on every Omarchy machine
+    # -- it is seeded with the theme and an autoupdate setting -- so declaring
+    # it as an xdg.configFile fails activation outright:
+    #
+    #   Existing file '~/.config/opencode/opencode.json' would be clobbered
+    #
+    # and takes the whole home-manager generation down with it, not just this
+    # file. `force = true` is worse: it would throw away the user's own opencode
+    # settings and Omarchy's theme wiring to install a provider block.
+    #
+    # So the provider is merged in with jq, on every activation, leaving every
+    # other key alone. Same reasoning as the pi settings below, arrived at the
+    # same way: both files already have an owner.
+    home.activation.nixarchyOpencodeProvider =
+      lib.mkIf (localAi.enable && builtins.elem "opencode" localAi.agents)
+        (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          conf="''${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json"
+          run mkdir -p "$(dirname "$conf")"
+          [ -s "$conf" ] || echo '{}' > "$conf"
+
+          # Written to a temp file and moved, so an interrupted activation
+          # cannot leave the user with half a config and no working agent.
+          tmp=$(${pkgs.coreutils}/bin/mktemp)
+          if ${pkgs.jq}/bin/jq -s '.[0] * .[1]' "$conf" ${
+            pkgs.writeText "opencode-provider.json" (
+              builtins.toJSON {
+                "$schema" = "https://opencode.ai/config.json";
+                provider.ollama = {
+                  npm = "@ai-sdk/openai-compatible";
+                  name = "Ollama (local)";
+                  options.baseURL = localAi.resolved.endpoint or "";
+                  models.${localAi.model} = {
+                    name = localAi.model;
+                    limit = {
+                      context = if localAi.contextWindow != null then localAi.contextWindow else 32768;
+                      output = 8192;
+                    };
+                  };
+                };
+              }
+            )
+          } > "$tmp"; then
+            run mv "$tmp" "$conf"
+          else
+            rm -f "$tmp"
+            echo "nixarchy: could not merge the local model into $conf" >&2
+          fi
+        '');
+
+    # pi keeps its configuration in ~/.pi/agent, not under XDG.
+    #
+    # supportsDeveloperRole is the field that has to be right. pi sends system
+    # instructions in the `developer` role to reasoning-capable models, and
+    # Ollama -- like vLLM and SGLang -- rejects a role it does not know. Every
+    # request then fails with an error that does not name the cause.
+    # pi's provider. Merged for the same reason, though less urgently: nothing
+    # in Omarchy writes models.json today. Doing it the same way means a future
+    # version that does cannot break activation, and means a user's own extra
+    # providers survive.
+    home.activation.nixarchyPiProvider =
+      lib.mkIf (localAi.enable && builtins.elem "pi" localAi.agents)
+        (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          conf="$HOME/.pi/agent/models.json"
+          run mkdir -p "$(dirname "$conf")"
+          [ -s "$conf" ] || echo '{}' > "$conf"
+
+          tmp=$(${pkgs.coreutils}/bin/mktemp)
+          if ${pkgs.jq}/bin/jq -s '.[0] * .[1]' "$conf" ${
+            pkgs.writeText "pi-provider.json" (
+              builtins.toJSON {
+                providers.ollama = {
+                  baseUrl = localAi.resolved.endpoint or "";
+                  api = "openai-completions";
+                  # Ignored by Ollama, but pi requires the field to be present.
+                  apiKey = "ollama";
+                  # pi sends system instructions in the `developer` role to
+                  # reasoning-capable models. Ollama -- like vLLM and SGLang --
+                  # rejects a role it does not know, and every request then fails
+                  # with an error that does not name the cause.
+                  compat.supportsDeveloperRole = false;
+                  models = [
+                    {
+                      id = localAi.model;
+                      contextWindow = if localAi.contextWindow != null then localAi.contextWindow else 32768;
+                      maxTokens = 8192;
+                    }
+                  ];
+                };
+              }
+            )
+          } > "$tmp"; then
+            run mv "$tmp" "$conf"
+          else
+            rm -f "$tmp"
+            echo "nixarchy: could not merge the local model into $conf" >&2
+          fi
+        '');
+
+    # settings.json is where pi reads defaultProvider/defaultModel, and it is
+    # also where omarchy-theme-set-pi writes the theme -- with
+    # `jq '.theme = ...'`, an in-place merge that preserves every other key.
+    #
+    # So it cannot be a home-manager symlink: theme-set would try to mv over a
+    # read-only store path and fail on every theme change. It is seeded instead,
+    # by the activation below, and only when absent -- after which it belongs to
+    # the user and to theme-set, and nothing here touches it again.
+    home.activation.nixarchyPiDefaultModel =
+      lib.mkIf (localAi.enable && builtins.elem "pi" localAi.agents)
+        (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          settings="$HOME/.pi/agent/settings.json"
+          if [ ! -e "$settings" ]; then
+            run mkdir -p "$HOME/.pi/agent"
+            run install -m 0644 ${
+              pkgs.writeText "pi-settings.json" (
+                builtins.toJSON {
+                  defaultProvider = "ollama";
+                  defaultModel = localAi.model;
+                }
+              )
+            } "$settings"
+            echo "nixarchy: pointed pi at the local model (${localAi.model})"
+          fi
+        '');
 
     # Same extension point, on the other hook Omarchy already runs:
     # default/hypr/autostart.lua ends its startup with `omarchy-hook post-boot`.
