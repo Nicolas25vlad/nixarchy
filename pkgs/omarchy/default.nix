@@ -121,6 +121,30 @@ let
   # One line of the Default Agent menu, kept out of the build phase because it
   # is JSON containing shell and every layer between here and the file wants to
   # escape something different. Written once, plainly, here.
+  # The "Ask" group under Trigger: one row per thing people actually ask their
+  # machine for, each routed to the skill that answers it.
+  #
+  # The prompts are NOT here -- they live in nix-bin/nixarchy-ask, where they can
+  # be read, reviewed and fixed as text rather than as JSON-inside-shell. That
+  # also keeps the escaping to one level, which the Antigravity row above is a
+  # standing argument for.
+  #
+  # `when` hides the whole group until a default agent is chosen: a menu of
+  # things that cannot work is worse than no menu.
+  askMenuRows = builtins.toFile "ask-menu-rows.jsonc" ''
+    "trigger.ask": {"icon":"󰚩","label":"Ask","aliases":["ai","agent","help","fix"],"when":"[[ -n \"$(omarchy-default-agent)\" ]]"},
+    "trigger.ask.logs": {"icon":"󰌪","label":"What's wrong?","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask logs"},
+    "trigger.ask.optimize": {"icon":"󰓅","label":"Make it faster","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask optimize"},
+    "trigger.ask.security": {"icon":"󰒃","label":"Am I exposed?","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask security"},
+    "trigger.ask.disk": {"icon":"󰋊","label":"Disk is full","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask disk"},
+    "trigger.ask.gpu": {"icon":"󰢮","label":"GPU not working","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask gpu"},
+    "trigger.ask.update": {"icon":"󰚰","label":"What changed?","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask update"},
+    "trigger.ask.backup": {"icon":"󰊢","label":"Back up my config","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask backup"},
+    "trigger.ask.install": {"icon":"󰐗","label":"Install something","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask install"},
+    "trigger.ask.anything": {"icon":"󰭹","label":"Ask anything","action":"omarchy-launch-floating-terminal-with-presentation nixarchy-ask anything"},
+    "setup.local-ai": {"icon":"󰭹","label":"Local AI","aliases":["ollama","local model"],"action":"omarchy-launch-floating-terminal-with-presentation nixarchy-local-ai"},
+  '';
+
   antigravityMenuRow = builtins.toFile "antigravity-menu-row.jsonc" ''
     "setup.default.agent.antigravity": {"icon":"","label":"Antigravity","checked":"[[ \"$(omarchy-default-agent)\" == \"antigravity\" ]] && command -v agy >/dev/null","action":"omarchy-default-agent antigravity"},
   '';
@@ -837,6 +861,14 @@ stdenvNoCC.mkDerivation {
                   { print }
                 ' $menu > $menu.new && mv $menu.new $menu
 
+                # The Ask group, inserted before the Trigger row it belongs under
+                # so it reads in menu order. Same file-not-inline reasoning.
+                ${gawk}/bin/awk -v rowfile=${askMenuRows} '
+                  BEGIN { while ((getline line < rowfile) > 0) rows = rows line "\n" }
+                  !ins && /"trigger\.emoji":/ { printf "%s", rows; ins = 1 }
+                  { print }
+                ' $menu > $menu.new && mv $menu.new $menu
+
                 # The menu is parsed at runtime, where a syntax error is a menu that
                 # does not open -- no error anyone can act on. Parse it here instead, so
                 # a bad substitution fails the build of whoever wrote it. This caught
@@ -857,6 +889,15 @@ stdenvNoCC.mkDerivation {
                     sys.exit("agent rows that tick without checking the command: " + repr(blind))
                 if "setup.default.agent.antigravity" not in agents:
                     sys.exit("the antigravity row did not survive")
+                ask = [k for k in d if k.startswith("trigger.ask")]
+                if len(ask) < 10:
+                    sys.exit("the Ask rows did not survive: %d found" % len(ask))
+                if "setup.local-ai" not in d:
+                    sys.exit("the Local AI row did not survive")
+                for k in ask + ["setup.local-ai"]:
+                    a = d[k].get("action")
+                    if a and not a.startswith("omarchy-launch-floating-terminal"):
+                        sys.exit("row %s does not open a terminal: %r" % (k, a))
                 print("menu ok: %d agent rows, every one install-checked" % len(agents))
                 ' $menu
 
