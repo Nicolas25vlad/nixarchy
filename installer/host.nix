@@ -35,6 +35,67 @@
     flake = "/etc/nixos";
   };
 
+  # The storage this machine might boot from, decided before we know what it
+  # is.
+  #
+  # nixos-generate-config inspects the running machine and writes the modules
+  # it found. Those are correct and they are also the reason an install has to
+  # BUILD an initrd instead of copying the one already on the ISO -- a
+  # different module list is a different initrd is a different toplevel, and
+  # on an image with no network, building it means having a compiler, which
+  # means the source bootstrap, which means the install stops.
+  #
+  # So the reference host carries a superset instead, and the installer pins
+  # the installed machine to it when what it detected fits inside. NixOS's own
+  # default set (boot.initrd.includeDefaultModules) already has nvme, ahci,
+  # sd_mod, xhci_pci and mmc_block, which covers most real hardware; what it
+  # lacks is everything below.
+  #
+  # This is not a guess about what a machine needs. It is a promise that the
+  # ISO carries an initrd able to find these, so that the common cases never
+  # build anything. A machine needing something outside it is still installed
+  # correctly -- installer/install.sh notices and keeps the detected list,
+  # which costs a build.
+  boot.initrd.availableKernelModules = [
+    # Virtual machines, which is where this is tested and where the default
+    # set is weakest: without virtio_blk a guest cannot find its own root.
+    "virtio_pci"
+    "virtio_blk"
+    "virtio_scsi"
+    "virtio_mmio"
+    # Installing from, or booting off, USB.
+    "usb_storage"
+    "uas"
+    # SD and eMMC, on laptops and small machines.
+    "sdhci_pci"
+    "sdhci_acpi"
+    "rtsx_pci_sdmmc"
+    # qemu's default machine has a floppy controller, so every VM install
+    # detects this and would otherwise be refused the baked initrd over a
+    # drive nobody has had for twenty years.
+    "floppy"
+  ];
+
+  # Point `nixpkgs#...` and `nixarchy#...` at what this machine was built from.
+  #
+  # Without this, an indirect flake reference sends nix to
+  # channels.nixos.org for the global registry and then downloads a nixpkgs --
+  # a different one from the machine's, so `nix shell nixpkgs#foo` can hand you
+  # a binary built against a different glibc than the system's, and does it
+  # after a download the machine did not need. With it, both resolve to store
+  # paths that are already here, which also means they resolve with no network
+  # at all: the first thing someone does on a freshly installed laptop is often
+  # `nix shell nixpkgs#<the wifi tool they need>`.
+  #
+  # flake-registry = "" turns off the global fallback, so anything not pinned
+  # here fails saying so rather than timing out against a network that may not
+  # exist yet.
+  nix.registry = {
+    nixpkgs.flake = inputs.nixpkgs;
+    nixarchy.flake = inputs.self;
+  };
+  nix.settings.flake-registry = "";
+
   # `nh os switch` is the loop the user lives in, and it only works with no
   # arguments if nh knows which flake it is switching -- otherwise it fails, or
   # picks up $NH_FLAKE from somewhere else entirely.

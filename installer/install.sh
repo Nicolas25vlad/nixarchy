@@ -47,6 +47,26 @@ NIX_FLAGS=(--extra-experimental-features "nix-command flakes")
 # these the first install compiles Hyprland from source. Keys copied from
 # nix.settings in modules/nixos.nix -- do not retype them.
 SUBSTITUTERS="https://nixarchy.cachix.org https://hyprland.cachix.org"
+TRUSTED_KEYS="nixarchy.cachix.org-1:05JOuIlsQOWY2/5DQMq7JEA1hwlhgvmMWowMfka8mMM= hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE="
+
+# ...unless we are the offline image, which carries the whole closure.
+#
+# Not an optimisation. With a substituter configured and no network, nix waits
+# out a connection timeout for EVERY path before falling back to the local
+# store, so an install that is working perfectly sits there looking hung for
+# several minutes. Saying there are no substituters makes the store the first
+# answer rather than the last.
+#
+# It also means the image's completeness is tested by everyone who boots it. A
+# path missing from storeContents would otherwise be quietly downloaded by
+# anyone who happens to have a network, and found by the one person who does
+# not.
+#
+# installer/cd.nix writes the marker.
+if [ -f /etc/nixarchy-iso ]; then
+  SUBSTITUTERS=""
+  TRUSTED_KEYS=""
+fi
 
 # Copy the system rather than rebuild it.
 #
@@ -65,7 +85,6 @@ SUBSTITUTERS="https://nixarchy.cachix.org https://hyprland.cachix.org"
 # when a copy is available. It still builds when it is not, so nothing is lost
 # where the reasoning did hold.
 SUBSTITUTE_FLAGS=(--option always-allow-substitutes true)
-TRUSTED_KEYS="nixarchy.cachix.org-1:05JOuIlsQOWY2/5DQMq7JEA1hwlhgvmMWowMfka8mMM= hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE="
 
 dry_run=false
 answers_file=""
@@ -498,6 +517,139 @@ generate_hardware_config() {
   # --root form would also write a configuration.nix over the template's.
   nixos-generate-config --root /mnt --no-filesystems --show-hardware-config \
     >"$work/hardware-configuration.nix"
+
+  reuse_baked_initrd "$work/hardware-configuration.nix"
+}
+
+# Use the initrd we already have, when it fits.
+#
+# nixos-generate-config lists the storage modules it found on this machine.
+# They are correct, and they are also the single most expensive line in the
+# file: a different module list is a different initrd, a different module
+# closure and a different toplevel, so a machine that states its own list
+# cannot use the one already sitting on the medium. It has to build one --
+# which needs a compiler, which on an image with no network means the source
+# bootstrap, which means the install stops.
+#
+# The reference host carries a superset (see installer/host.nix). When what
+# was detected fits inside it, the detected line is commented out and the
+# superset applies: the initrd is then byte-identical to the baked one and is
+# copied rather than built. When it does not fit -- some controller we do not
+# carry -- the line stays exactly as generated, because a machine that boots
+# slowly is better than one that does not boot.
+#
+# Only availableKernelModules is touched. boot.kernelModules is left alone:
+# it is where the CPU's KVM module lands, suppressing it would cost the user
+# virtualisation, and it perturbs seven text derivations rather than an
+# initrd -- which the medium can build from what it carries.
+reuse_baked_initrd() {
+  local file=$1 detected m
+  local baked avail_src forced_src
+
+  # The list depends on the answer to the encryption question: LUKS pulls a
+  # dozen crypto modules into the initrd, so the two baked initrds have
+  # different module sets and pinning to the wrong one matches neither.
+  if [ "$encrypt" = "yes" ]; then
+    avail_src="@initrdmodules@"
+    forced_src="@initrdforced@"
+  else
+    avail_src="@initrdmodulesplain@"
+    forced_src="@initrdforcedplain@"
+  fi
+  baked=" $avail_src "
+
+  detected=$(sed -n 's/.*boot\.initrd\.availableKernelModules = \[\(.*\)\];.*/\1/p' "$file" |
+    tr -d '"')
+  [ -n "$detected" ] || return 0
+
+  # Every miss, not the first. One of these means a rebuild either way, and
+  # naming them all means whoever widens the set in installer/host.nix does it
+  # once rather than once per module.
+  local missing=""
+  for m in $detected; do
+    case $baked in
+      *" $m "*) ;;
+      *) missing="$missing $m" ;;
+    esac
+  done
+
+  if [ -n "$missing" ]; then
+    echo "hardware: not on this medium:$missing" >&2
+    echo "hardware: keeping the detected initrd, which the install must build." >&2
+    return 0
+  fi
+
+  # Pinned with mkForce, not just commented out.
+  #
+  # Commenting the detected line is not enough, and the reason is easy to miss:
+  # nixos-generate-config also writes an `imports` line, and
+  # profiles/qemu-guest.nix sets availableKernelModules itself -- virtio_net,
+  # 9p, virtiofs, and initrd.kernelModules of its own. A comment cannot undo an
+  # import. So the detected line is commented for the reader, and both lists
+  # are then forced to what the medium carries, which is what actually makes
+  # the initrd identical to the baked one.
+  #
+  # Both lists: availableKernelModules is what may be loaded, kernelModules is
+  # what is loaded unconditionally, and the profile adds to both.
+  # The comment goes first. Run the other way round, the sed below also
+  # matches the mkForce line just written and comments out the pin, which
+  # is exactly as broken as doing nothing and much harder to see.
+  # Commented as well, so the reader sees what was detected here rather than
+  # only what replaced it.
+  sed -i \
+    -e 's|^\( *\)boot\.initrd\.availableKernelModules|\1# Detected on this machine, and already covered by the module set nixarchy\
+\1# installs, so it is commented out: leaving it in would mean building an\
+\1# initrd instead of copying the one that came with the installer.\
+\1#\
+\1# Uncomment it to use exactly what was detected here. That is a rebuild,\
+\1# and it needs a network the first time.\
+\1# boot.initrd.availableKernelModules|' \
+    -e 's|^\( *\)boot\.initrd\.kernelModules|\1# Commented for the same reason, and also because it has to be: the pin\
+\1# below sets this too, and Nix rejects an attribute defined twice in one\
+\1# attrset -- the flake would not parse.\
+\1# boot.initrd.kernelModules|' \
+    "$file"
+
+  # The file ends with its closing brace, and the pin has to go inside it.
+  # Guarded rather than assumed: if nixos-generate-config ever stops ending
+  # that way, this leaves the file alone rather than producing a flake that
+  # does not parse, three minutes before the disk is written to.
+  if [ "$(tail -n 1 "$file")" != "}" ]; then
+    echo "hardware: unexpected shape; keeping the detected initrd" >&2
+    return 0
+  fi
+
+  # The Nix lines are printf, not part of the heredoc: writeShellApplication
+  # runs shellcheck over this file, an unquoted heredoc is shell as far as it
+  # is concerned, and `boot.initrd.x = lib.mkForce [...]` reads to it as a
+  # command called `boot.initrd.x` with a stray `=`. A quoted heredoc for the
+  # prose and printf for the two generated lines keeps both readers happy.
+  local avail forced
+  # shellcheck disable=SC2086  # deliberate word splitting: a module per word
+  avail=$(printf '"%s" ' $avail_src)
+  # shellcheck disable=SC2086
+  forced=$(printf '"%s" ' $forced_src)
+
+  {
+    head -n -1 "$file"
+    cat <<'PIN'
+
+  # ---- added by the nixarchy installer -------------------------------------
+  # The initrd this machine boots is the one that came on the installer, which
+  # is why the install copied it rather than spending minutes building a
+  # near-identical one.
+  #
+  # Both lists are forced because a comment cannot undo an import: the line
+  # above sets availableKernelModules, but so does the profile this file
+  # imports (qemu-guest.nix, on a VM), and that contribution would survive.
+  #
+  # Delete this block to use exactly what was detected on this machine. That
+  # is a rebuild, and it needs a network the first time.
+PIN
+    printf '  boot.initrd.availableKernelModules = lib.mkForce [ %s];\n' "$avail"
+    printf '  boot.initrd.kernelModules = lib.mkForce [ %s];\n' "$forced"
+    tail -n 1 "$file"
+  } >"$file.pinned" && mv "$file.pinned" "$file"
 }
 
 install_flake_dir() {
@@ -524,9 +676,48 @@ run_install() {
     "/mnt/etc/nixos#nixosConfigurations.$hostname.config.system.build.toplevel" 2>&1 |
     head -40 || true
 
+  # Build here, then install what was built. NOT `nixos-install --flake`.
+  #
+  # --flake makes nixos-install run `nix build --store /mnt`, and --store sets
+  # the EVALUATION store as well as the build one. Evaluating the generated
+  # flake against /mnt means resolving every locked input against a store that
+  # has just been created and contains nothing, so nix goes to the network for
+  # sources that are sitting in the store one directory up:
+  #
+  #   error: unable to download
+  #   'https://github.com/olafkfreund/nixarchy/archive/<rev>.tar.gz'
+  #
+  # -- on an image built precisely so that it would not have to. Building the
+  # toplevel here first evaluates against THIS store, where the sources are,
+  # and hands nixos-install a path with --system, which only copies.
+  #
+  # It is also the faster order. The build is the same either way, but this
+  # way it happens once, in the store that already holds every dependency,
+  # instead of inside a target store that has to have each one copied to it
+  # before it can be used.
+  local system
+  system=$(nix "${NIX_FLAGS[@]}" build --no-link --print-out-paths "${SUBSTITUTE_FLAGS[@]}" \
+    "/mnt/etc/nixos#nixosConfigurations.$hostname.config.system.build.toplevel") || true
+
+  # Checked, because set -e will not check it here. The whole install runs as
+  # `{ ...; } || rc=$?` so the dashboard can report a failure, and inside a
+  # compound command whose status is tested, errexit does not fire. A failed
+  # build therefore returned an empty string, and nixos-install was called with
+  # `--system ""` -- which it reads as no system at all, falls back to looking
+  # for a flake in the current directory, and reports
+  #
+  #   error: could not find a flake.nix file
+  #
+  # naming nothing that has anything to do with what actually went wrong.
+  if [ -z "$system" ]; then
+    echo "nixarchy-install: the system did not build; nothing was installed." >&2
+    echo "The build output is above, in /var/log/nixarchy-install.log." >&2
+    return 1
+  fi
+
   # nixos-install takes --option, not --extra-experimental-features: it is not
   # a nix subcommand and rejects the flag outright.
-  nixos-install --root /mnt --flake "/mnt/etc/nixos#$hostname" --no-root-password \
+  nixos-install --root /mnt --system "$system" --no-root-password \
     --option extra-experimental-features "nix-command flakes" \
     --option extra-substituters "$SUBSTITUTERS" \
     --option extra-trusted-public-keys "$TRUSTED_KEYS" \
