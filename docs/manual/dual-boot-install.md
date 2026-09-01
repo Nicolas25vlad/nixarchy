@@ -4,20 +4,21 @@ title: Dual boot install
 
 # Dual boot install
 
-There is no nixarchy installer, so there is no dual-boot installer either.
+nixarchy has a fresh-machine installer with **Full disk install** and **Free
+space install** modes. The latter is UEFI-only, requires at least 32 GiB of
+contiguous unallocated space on a GPT disk, and creates a separate nixarchy ESP
+and root partition without adopting or formatting an existing partition.
 
 Omarchy ships an ISO whose installer offers a **Free space install** next to
 Windows, encrypts the partition with LUKS, and then runs `limine-scan` to add
 the other operating systems to its bootloader.
 
-**nixarchy has the ISO now, but not the free-space install.** Its installer
-formats a whole disk — that and nothing else. Installing alongside Windows is
-[issue #47](https://github.com/olafkfreund/nixarchy/issues/47), and it is the
-one piece of this work whose failure mode is destroying data that is not ours,
-so it is being done carefully rather than quickly. Until it lands, this page
-cannot honestly say more than the following.
+When a Windows EFI loader is found on an existing ESP, Limine gets a
+**Windows Boot Manager** entry that references that ESP by PARTUUID. The Windows
+ESP is mounted read-only during detection and is never modified. The free-space
+design is tracked in [issue #47](https://github.com/olafkfreund/nixarchy/issues/47).
 
-## What to do instead
+## Free-space install
 
 1. **Make room on the Windows side** exactly as upstream describes — Disk
    Management, *Shrink Volume*, and turn BitLocker off first, since it encrypts
@@ -25,15 +26,15 @@ cannot honestly say more than the following.
    [the upstream page](https://omarchy.org/manual/dual-boot-install/) is about
    Windows, not Omarchy, and applies unchanged.
 
-2. **Install NixOS into the free space** by whichever method you prefer. The
-   NixOS installer supports installing alongside an existing operating system;
-   partitioning and bootloader setup for that are covered by the NixOS manual,
-   and this manual does not repeat them.
+2. Boot the nixarchy ISO in UEFI mode and choose **Free space install** when the
+   disk has a suitable contiguous free region. The installer creates and
+   formats only `nixarchy-esp` and `nixarchy-root` in that region.
 
-3. **Add nixarchy as a flake input** to the resulting configuration and
-   rebuild. That is the whole of the nixarchy-specific work, and it is
-   described on [the getting-started page](getting-started).
+3. Confirm the summary. If the disk changed, the free-space layout no longer
+   matches the recorded partition table and the installer refuses to proceed.
 
-Dual boot is therefore a NixOS question, and the NixOS manual and wiki are the
-right references for it. Once the machine boots into NixOS, nothing about
-adding nixarchy is different for having Windows on the next partition.
+If there is no suitable region, or if BitLocker or another unsupported disk
+state is detected, the installer refuses rather than guessing. Users who need
+dual boot on a layout the installer cannot handle must still install NixOS
+alongside the existing OS first and then add nixarchy to that NixOS
+configuration as described on [the getting-started page](getting-started).

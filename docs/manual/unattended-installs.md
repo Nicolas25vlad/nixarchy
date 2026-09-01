@@ -4,7 +4,9 @@ title: Unattended installs
 
 # Unattended installs
 
-There is no nixarchy installer, so there is no unattended installer either.
+nixarchy-install already supports unattended installation through an answers
+file. Automatic discovery of an Omarchy-style `cidata` drive is not implemented
+yet.
 
 Omarchy's ISO watches for a second drive labelled `cidata`, reads the wizard's
 answers off it, and installs with nobody at the keyboard — which makes it a

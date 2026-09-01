@@ -824,6 +824,7 @@ tests drive it and how you reinstall a machine the same way twice:
 
 ```
 device=/dev/nvme0n1
+install_mode=whole
 encrypt=yes
 luks_passphrase=...
 hostname=kestrel
@@ -849,13 +850,13 @@ install builds nothing, because everything it did is described there.
 
 **Four caveats worth knowing before you write the stick.**
 
-It takes **the whole drive**. There is no partition picker and there is not
-going to be one: the layout is one file, `installer/disk-config.nix`, and the
-installer runs it against the disk you name. Anything already there is gone.
-Sharing a disk with Windows means editing that file and running `disko` by hand
-first, which is a thing you can do and not a thing this walks you through.
+It supports **whole-disk** and **free-space** installation. Whole-disk mode
+formats the disk you name. Free-space mode is offered only for a suitable GPT
+free region, creates a separate nixarchy ESP and root partition, and preserves
+the existing partitions. It never adopts the Windows ESP; when a Windows loader
+is found, Limine chainloads it by PARTUUID.
 
-It is **UEFI only** — the layout is an ESP with systemd-boot, and there is no
+It is **UEFI only** — the layout is an ESP with Limine, and there is no
 BIOS path.
 
 **`x86_64-linux` only.** Nothing else is built or tested.
@@ -1416,12 +1417,10 @@ someone would miss it:
    own `.desktop` -- came up to a black desktop. That cause was not chased down,
    because the answer did not depend on it and guessing at one would be worse
    than saying so. The guards work; the branch is not somewhere to go.
-2. **The installer takes the whole disk, and there is no Secure Boot and no
-   graphical installer.** Each is a decision rather than a gap. Sharing a disk
-   means partitioning it yourself, which `installer/disk-config.nix` lets you
-   do and the installer will not: a partition picker is the part of an
-   installer most likely to destroy something, and the layout being one
-   readable file is a better answer than a wizard that hides it. Secure Boot
+2. **The installer has whole-disk and free-space modes, and there is no Secure
+   Boot or graphical installer.** Free-space mode is UEFI-only, requires a
+   suitable contiguous GPT region, creates its own ESP and root partition, and
+   preserves existing partitions. Secure Boot
    needs signed shims and enrolled keys, which is a distribution-level
    commitment rather than an installer feature. And the installer is a TUI
    because it runs before there is a desktop to draw a GUI with -- Omarchy's
@@ -1451,8 +1450,8 @@ Known gaps in detail:
   starts being built rather than copied turns a test red instead of quietly
   costing everyone ten minutes.
 
-  What is missing is the rest of the product around it: a nightly image, release
-  automation, and installing alongside an existing OS. All tracked on the epic.
+  What is missing is the rest of the product around it: a nightly image and
+  release automation. Those are tracked on the epic.
 
 - `brave-origin` has no published source; use `apps.brave` with policies in
   `/etc/brave/policies/managed`

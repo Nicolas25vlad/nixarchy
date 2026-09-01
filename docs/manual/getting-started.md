@@ -96,8 +96,8 @@ Three things to know first.
 so an install is as fast as your connection. Making it offline is the next phase
 of the work.
 
-**It is UEFI only.** The layout is an ESP with systemd-boot, and there is no BIOS
-path — the installer checks and refuses rather than failing at the end.
+**It is UEFI only.** The layout is an ESP with Limine, and there is no BIOS path
+— the installer checks and refuses rather than failing at the end.
 
 **A Bluetooth keyboard cannot unlock an encrypted disk.** The passphrase prompt
 happens in the initrd, before Bluetooth exists, so a keyboard that pairs once the
@@ -163,7 +163,7 @@ them rather than setting them:
 | Upstream default | Here |
 |---|---|
 | Full-disk encryption, mandatory | Yours to choose during the NixOS install (LUKS is a checkbox in the graphical installer). nixarchy does not add it afterwards. |
-| Limine boot loader with snapshots | Whatever boot loader you picked; systemd-boot is the common one. Rollback comes from NixOS generations, see [system snapshots](system-snapshots.md). |
+| Limine boot loader with snapshots | Limine with NixOS generations in its boot menu. Rollback comes from NixOS generations, see [system snapshots](system-snapshots.md). |
 
 Upstream's note about Bluetooth keyboards still holds if you encrypt: the
 passphrase prompt runs before Bluetooth, so use a wired or 2.4 GHz keyboard.
