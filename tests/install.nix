@@ -1,4 +1,4 @@
-{ inputs, pkgs }:
+{ inputs, pkgs, installMode ? "whole" }:
 # Does the installer's *output* boot?
 #
 # What this cost, so nobody pays it twice. Three things were wrong, and the
@@ -49,6 +49,9 @@
 # check proves; this one proves the install flow. Narrowing it here is cheaper
 # than an OCR anchor on a passphrase prompt.
 let
+  isFree = installMode == "free";
+  windowsEspPartuuid = "11111111-2222-3333-4444-555555555555";
+
   # hyprland does not follow nixpkgs, so its inputs are separate locked entries
   # and are needed to evaluate the generated flake. Collected rather than
   # listed: enumerating aquamarine, hyprlang, hyprutils and the rest by hand is
@@ -171,10 +174,12 @@ let
         (import ../installer/host.nix {
           hostname = "installed";
           username = "omarchy";
+          windowsPartuuid = if isFree then windowsEspPartuuid else null;
         })
         (import ../installer/disk-config.nix {
           device = "/dev/vdb";
           encrypt = false;
+          mode = installMode;
         })
         # Everything the generated configuration.nix adds. Without these the
         # seeded system is not the system that gets installed: system-path
@@ -197,6 +202,30 @@ let
       ]
       ++ pkgs.lib.optional instrumented instrumentation;
     }).config.system.build;
+
+  freeDiskSetup = pkgs.lib.optionalString isFree ''
+    # A foreign EFI partition, an existing data partition, and a large free
+    # tail. The fixed PARTUUID lets the generated Limine entry be deterministic.
+    installer.succeed(
+        "printf 'label: gpt\\n"
+        "start=2048, size=2097152, type=uefi, uuid=${windowsEspPartuuid}, name=Windows\\n"
+        "start=2101248, size=8388608, type=linux, name=existing-data\\n"
+        "' | sfdisk --no-reread /dev/vdb")
+    installer.succeed(
+        "partprobe /dev/vdb && mkfs.vfat -n WINDOWS /dev/vdb1 && "
+        "mkfs.ext4 -F -L DATA /dev/vdb2")
+    installer.succeed(
+        "mkdir -p /mnt/foreign && mount /dev/vdb1 /mnt/foreign && "
+        "mkdir -p /mnt/foreign/EFI/Microsoft/Boot && "
+        "printf windows > /mnt/foreign/EFI/Microsoft/Boot/bootmgfw.efi && "
+        "umount /mnt/foreign")
+    installer.succeed(
+        "mount /dev/vdb2 /mnt/foreign && "
+        "dd if=/dev/zero of=/mnt/foreign/keep.bin bs=1M count=1 conv=fsync && "
+        "sync && umount /mnt/foreign")
+    before_data_hash = installer.succeed("sha256sum /dev/vdb2").strip()
+    print("pre-existing data partition hash: " + before_data_hash)
+  '';
 
   # Every system the target might end up being: two CPU vendors, with and
   # without the backdoor. They share all but a handful of derivations, so the
@@ -239,7 +268,7 @@ let
   ];
 in
 pkgs.testers.runNixOSTest {
-  name = "nixarchy-install";
+  name = "nixarchy-install-${installMode}";
 
   nodes.installer =
     { ... }:
@@ -284,6 +313,7 @@ pkgs.testers.runNixOSTest {
         # second disk; /dev/vda is this node's own root.
         "nixarchy/answers".text = ''
           device=/dev/vdb
+          install_mode=${installMode}
           encrypt=no
           hostname=installed
           username=omarchy
@@ -374,12 +404,13 @@ pkgs.testers.runNixOSTest {
         memorySize = 6144;
         cores = 4;
         # The installer refuses to run where /sys/firmware/efi does not exist,
-        # and is right to -- the layout is an ESP with systemd-boot and there
+        # and is right to -- the layout is an ESP with Limine and there
         # is no BIOS path. A default test node boots through -kernel with no
         # firmware at all, so the node has to be given some.
         useEFIBoot = true;
-        # The blank target, which appears as /dev/vdb.
-        emptyDiskImages = [ 20480 ];
+        # The target appears as /dev/vdb. Free-space mode needs room for two
+        # existing partitions and the required 32 GiB contiguous tail.
+        emptyDiskImages = [ (if isFree then 51200 else 20480) ];
         # nixos-install copies the whole closure into the target, and the
         # default 1 GB store overlay is nowhere near enough.
         diskSize = 32768;
@@ -405,6 +436,8 @@ pkgs.testers.runNixOSTest {
     # true this is the first place a reader will look.
     print(installer.succeed(
         "nixos-generate-config --no-filesystems --show-hardware-config"))
+
+    ${freeDiskSetup}
 
     # ---- install -------------------------------------------------------
     import os
@@ -457,6 +490,18 @@ pkgs.testers.runNixOSTest {
     # different bugs to chase.
     installer.succeed("test -d /mnt/etc/nixos/.git")
     installer.succeed("test -d /mnt/boot/EFI")
+    ${pkgs.lib.optionalString isFree ''
+    installer.succeed("grep -q 'nixarchy-esp' /mnt/etc/nixos/disk-config.nix")
+    installer.succeed(
+        "test \"$(nix eval --raw /mnt/etc/nixos#installed.config.disko.devices."
+        "disk.nixarchyEsp.content.type)\" = filesystem")
+    installer.succeed("test \"$(lsblk -no PARTLABEL /dev/vdb1)\" = 'Windows'")
+    installer.succeed("test \"$(lsblk -no PARTLABEL /dev/vdb2)\" = 'existing-data'")
+    installer.succeed("test \"$(lsblk -no PARTLABEL /dev/vdb3)\" = 'nixarchy-esp'")
+    installer.succeed("test \"$(lsblk -no PARTLABEL /dev/vdb4)\" = 'nixarchy-root'")
+    installer.succeed("sha256sum /dev/vdb2 | cmp - <(printf '%s\\n' '" + before_data_hash + "')")
+    installer.succeed("grep -q '${windowsEspPartuuid}' /mnt/etc/nixos/flake.nix")
+    ''}
     print("install wrote a flake and an ESP")
 
     # ---- make the result observable ------------------------------------
@@ -499,6 +544,18 @@ pkgs.testers.runNixOSTest {
         name="target")
     target.start()
     target.wait_for_unit("multi-user.target")
+    ${pkgs.lib.optionalString isFree ''
+    target.succeed("test \"$(lsblk -no PARTLABEL /dev/vda1)\" = 'Windows'")
+    target.succeed("test \"$(lsblk -no PARTLABEL /dev/vda2)\" = 'existing-data'")
+    target.succeed("test \"$(lsblk -no PARTLABEL /dev/vda3)\" = 'nixarchy-esp'")
+    target.succeed("test \"$(lsblk -no PARTLABEL /dev/vda4)\" = 'nixarchy-root'")
+    target.succeed("test -s /boot/limine.conf")
+    target.succeed("grep -q 'Windows Boot Manager' /boot/limine.conf")
+    target.succeed("mkdir -p /mnt/windows && mount -o ro /dev/vda1 /mnt/windows")
+    target.succeed("test -s /mnt/windows/EFI/Microsoft/Boot/bootmgfw.efi")
+    target.succeed("umount /mnt/windows")
+    target.succeed("sha256sum /dev/vda2 | cmp - <(printf '%s\\n' '" + before_data_hash.replace('/dev/vdb2', '/dev/vda2') + "')")
+    ''}
     print("the installed disk booted on its own bootloader")
 
     # ---- the desktop comes up ------------------------------------------

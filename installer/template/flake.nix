@@ -35,6 +35,7 @@
           (import "${nixarchy}/installer/host.nix" {
             hostname = "@hostname@";
             username = "@username@";
+            windowsPartuuid = @windows_partuuid@;
           })
           (import ./disk-config.nix {
             device = "@device@";
@@ -43,6 +44,7 @@
             # substitutes the quotes away along with it. The autologin flag in
             # configuration.nix is quoted for the same reason.
             encrypt = "@encrypt@";
+            mode = "@install_mode@";
           })
           ./configuration.nix
         ];

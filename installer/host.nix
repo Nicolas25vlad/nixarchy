@@ -12,6 +12,7 @@
 {
   hostname,
   username,
+  windowsPartuuid ? null,
 }:
 {
   inputs,
@@ -147,8 +148,20 @@
   networking.hostName = hostname;
 
   boot.loader = {
-    systemd-boot.enable = true;
     efi.canTouchEfiVariables = true;
+    systemd-boot.enable = false;
+    limine = {
+      enable = true;
+      # NixOS generations are Limine's snapshot equivalent here. A Windows
+      # entry is generated only after the installer has found its loader on a
+      # foreign ESP, and references that ESP by PARTUUID without mounting or
+      # modifying it at boot time.
+      extraEntries = lib.optionalString (windowsPartuuid != null) ''
+        /Windows Boot Manager
+          protocol: efi_chainload
+          image_path: uuid(${windowsPartuuid}):/EFI/Microsoft/Boot/bootmgfw.efi
+      '';
+    };
   };
 
   # mkDefault: the generated configuration.nix carries the answers the installer

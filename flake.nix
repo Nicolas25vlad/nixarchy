@@ -223,7 +223,12 @@
             gawk
             findutils
             util-linux # lsblk, findmnt
+            gptfdisk # sgdisk for adding partitions in free-space mode
+            parted # partprobe after the GPT table is extended
             git
+            jq # free-space and partition-preservation checks
+            diffutils # cmp for preservation checks
+            systemd # udevadm after the partition table is extended
             mkpasswd
             nixos-install-tools # nixos-install, nixos-generate-config
             nix
@@ -546,6 +551,17 @@
         # present, and on an image with no network the difference between
         # having them and not is a source bootstrap.
         reference-unencrypted = self.lib.mkReference { encrypt = false; };
+
+        # Free-space uses the same system closure but a Disko script without a
+        # GPT layer. Keep both encryption variants in the ISO's store closure.
+        reference-free = self.lib.mkReference {
+          encrypt = true;
+          mode = "free";
+        };
+        reference-free-unencrypted = self.lib.mkReference {
+          encrypt = false;
+          mode = "free";
+        };
       };
 
       devShells = eachSystem (system: {
@@ -556,7 +572,11 @@
       # modes come from here so they cannot drift apart, and so installer/cd.nix
       # can bake each one onto the image without restating the host.
       lib.mkReference =
-        { encrypt }:
+        {
+          encrypt,
+          mode ? "whole",
+          windowsPartuuid ? null,
+        }:
         nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = { inherit inputs; };
@@ -567,10 +587,11 @@
             (import ./installer/host.nix {
               hostname = "nixarchy";
               username = "omarchy";
+              inherit windowsPartuuid;
             })
             (import ./installer/disk-config.nix {
               device = "/dev/vda";
-              inherit encrypt;
+              inherit encrypt mode;
             })
           ];
         };
@@ -624,6 +645,19 @@
         # nothing. See tests/install.nix for why the second machine is not a
         # normal test node.
         install = import ./tests/install.nix {
+          inherit inputs;
+          pkgs = pkgsFor.${system};
+        };
+
+        # Installs into a GPT disk carrying a foreign ESP and data partition;
+        # the test hashes the data partition before and after the install.
+        install-free-space = import ./tests/install.nix {
+          inherit inputs;
+          pkgs = pkgsFor.${system};
+          installMode = "free";
+        };
+
+        install-safety = import ./tests/install-safety.nix {
           inherit inputs;
           pkgs = pkgsFor.${system};
         };

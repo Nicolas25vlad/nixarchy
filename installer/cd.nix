@@ -71,6 +71,8 @@ let
   referenceConfigs = map (c: c.config) [
     inputs.self.nixosConfigurations.reference
     inputs.self.nixosConfigurations.reference-unencrypted
+    inputs.self.nixosConfigurations.reference-free
+    inputs.self.nixosConfigurations.reference-free-unencrypted
   ];
 
   references = map (c: c.system.build) referenceConfigs;
@@ -295,7 +297,7 @@ in
       pkgs.bashInteractive
       pkgs.coreutils
       pkgs.perl
-      # systemd-boot-builder.
+      # bootloader builder.
       pkgs.python3
       pkgs.jq
     ]

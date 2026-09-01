@@ -100,6 +100,13 @@ password_hash=""
 luks_passphrase=""
 timezone=""
 keymap=""
+install_mode="whole"
+free_region=""
+windows_partuuid=""
+partition_snapshot=""
+MIN_FREE_BYTES=$((32 * 1024 * 1024 * 1024))
+ESP_BYTES=$((2 * 1024 * 1024 * 1024))
+sector_size=512
 
 usage() {
   cat <<'USAGE'
@@ -114,6 +121,7 @@ nixarchy-install -- install nixarchy onto a disk.
 The answers file is one key=value per line, # for comments, no quoting:
 
   device=/dev/vda           whole disk, not a partition
+  install_mode=whole        whole disk (default) or free
   encrypt=yes               yes or no
   luks_passphrase=...       required when encrypt=yes
   hostname=nixarchy
@@ -126,8 +134,9 @@ The answers file is one key=value per line, # for comments, no quoting:
 It holds a password in clear, which is inherent to installing without being
 asked. Nothing copies it onto the installed machine.
 
-Run as root from a NixOS live medium, on a UEFI machine. It formats the disk
-you choose, completely. There is no dual-boot path yet.
+Run as root from a NixOS live medium, on a UEFI machine. Whole-disk mode
+formats the disk completely. Free-space mode only uses a new region in an
+existing GPT partition table.
 USAGE
 }
 
@@ -153,7 +162,7 @@ require_root_and_uefi() {
     echo "nixarchy-install: must run as root." >&2
     exit 1
   fi
-  # The layout is an ESP with systemd-boot. There is no BIOS path, and saying
+  # The layout is an ESP with Limine. There is no BIOS path, and saying
   # so now beats a bootloader that fails to install at the very end.
   if [ ! -d /sys/firmware/efi ]; then
     echo "nixarchy-install: this machine booted in BIOS/legacy mode." >&2
@@ -251,7 +260,15 @@ ask_identity() {
 # The medium we booted from must never be in the list. An installer that offers
 # to format itself is a bug, not an edge case.
 boot_medium() {
-  findmnt -no SOURCE /iso 2>/dev/null | sed 's/[0-9]*$//' || true
+  local source parent
+  source=$(findmnt -no SOURCE /iso 2>/dev/null || true)
+  [ -n "$source" ] || return 0
+  parent=$(lsblk -no PKNAME "$source" 2>/dev/null | head -n 1 || true)
+  if [ -n "$parent" ]; then
+    printf '/dev/%s\n' "$parent"
+  else
+    printf '%s\n' "$source"
+  fi
 }
 
 ask_device() {
@@ -293,12 +310,252 @@ ask_device() {
   [ -n "$device" ] || exit 1
 }
 
+# `sfdisk --list-free --json` is mentioned in the design issue, but util-linux
+# rejects -F and -J together. `sfdisk -J` is the machine-readable source of
+# truth here; jq computes the gaps between the GPT's usable bounds and its
+# existing partitions. Existing partitions are never inferred from a gap in a
+# human-readable table.
+partition_json() {
+  sfdisk -J "$1" 2>/dev/null
+}
+
+free_regions() {
+  jq -r '
+    .partitiontable as $t |
+    if ($t.label // "") != "gpt" then empty
+    else
+      (($t.partitions // [])
+        | map({start: (.start | tonumber), end: ((.start + .size) | tonumber)})
+        | sort_by(.start)) as $parts
+      | reduce $parts[] as $part
+          ({ cursor: ($t.firstlba | tonumber), regions: [] };
+           .regions += (if .cursor < $part.start
+                        then [{ start: .cursor, size: ($part.start - .cursor) }]
+                        else [] end)
+           | .cursor = ([.cursor, $part.end] | max))
+      | .regions +
+        (if .cursor < (($t.lastlba | tonumber) + 1)
+         then [{ start: .cursor, size: (($t.lastlba | tonumber) + 1 - .cursor) }]
+         else [] end)
+      | .[] | "\(.start) \(.size)"
+    end'
+}
+
+largest_free_region() {
+  local json=$1 region min_sectors
+  sector_size=$(printf '%s\n' "$json" | jq -r '.partitiontable.sectorsize // 0')
+  [ "${sector_size:-0}" -gt 0 ] || return 1
+  min_sectors=$(( (MIN_FREE_BYTES + sector_size - 1) / sector_size ))
+  region=$(printf '%s\n' "$json" | free_regions | awk -v min="$min_sectors" '
+    $2 >= min && $2 > size { start=$1; size=$2 }
+    END { if (size > 0) print start " " size }')
+  [ -n "$region" ] && printf '%s\n' "$region"
+}
+
+disk_is_empty() {
+  local json=$1 count signatures
+  if json=$(partition_json "$json"); then
+    count=$(printf '%s\n' "$json" | jq '.partitiontable.partitions // [] | length') || return 2
+    [ "$count" -eq 0 ]
+    return
+  fi
+
+  # sfdisk reports both a genuinely blank disk and a damaged/unknown table as
+  # "unrecognized". A blank device has no wipefs signatures; if any signature
+  # remains, the state is ambiguous and must not fall through to whole-disk
+  # installation.
+  signatures=$(wipefs -n "$1" 2>/dev/null) || return 2
+  [ -z "$signatures" ]
+  return
+}
+
+disk_is_gpt_with_partitions() {
+  local json=$1
+  json=$(partition_json "$json") || return 1
+  [ "$(printf '%s\n' "$json" | jq -r '.partitiontable.label // ""')" = gpt ] || return 1
+  [ "$(printf '%s\n' "$json" | jq '.partitiontable.partitions // [] | length')" -gt 0 ]
+}
+
+ask_install_mode() {
+  local json region choice
+  json=$(partition_json "$device") || json=""
+  if disk_is_empty "$device"; then
+    install_mode=whole
+    return 0
+  elif [ "$?" -eq 2 ]; then
+    echo "nixarchy-install: cannot safely identify the partition table on $device." >&2
+    echo "Refusing to guess whether it is empty." >&2
+    exit 1
+  fi
+
+  region=$(largest_free_region "$json" || true)
+  if [ -z "$region" ] || ! disk_is_gpt_with_partitions "$device"; then
+    install_mode=whole
+    return 0
+  fi
+
+  ui_screen "How should nixarchy use $device?"
+  choice=$(printf '%s\n' \
+    $'Full disk install\twhole' \
+    $'Free space install (preserve existing partitions)\tfree' |
+    gum choose --height "$(ui_widget_height)" --padding "$(ui_gum_pad)" \
+      --header "Select install mode" | cut -f2)
+  [ -n "$choice" ] || exit 1
+  install_mode=$choice
+}
+
+record_partition_state() {
+  local json=$1
+  partition_snapshot=/run/nixarchy-install/partitions-before.json
+  mkdir -p /run/nixarchy-install
+  printf '%s\n' "$json" | jq -S . >"$partition_snapshot" || {
+    echo "nixarchy-install: cannot record the existing GPT partition table." >&2
+    exit 1
+  }
+  printf '%s\n' "$json" | jq -cS '[.partitiontable.partitions[] |
+    {start, size, type, uuid, name: (.name // "")} ] | sort_by(.start)' \
+    >"$partition_snapshot.partitions"
+}
+
+verify_partition_state_before_write() {
+  local current=$1 canonical
+  canonical=$(mktemp /run/nixarchy-install/current.XXXXXX)
+  printf '%s\n' "$current" | jq -S . >"$canonical" || {
+    echo "nixarchy-install: cannot re-read the target GPT partition table." >&2
+    exit 1
+  }
+  if ! cmp -s "$partition_snapshot" "$canonical"; then
+    echo "nixarchy-install: the target disk changed while it was being prepared." >&2
+    echo "Refusing to partition it; existing data was not touched." >&2
+    exit 1
+  fi
+  rm -f "$canonical"
+}
+
+verify_existing_partitions() {
+  local json=$1 current_file
+  current_file=$(mktemp /run/nixarchy-install/current-partitions.XXXXXX)
+  printf '%s\n' "$json" | jq -cS '[.partitiontable.partitions[] |
+    {start, size, type, uuid, name: (.name // "")} ] | sort_by(.start)' >"$current_file" || {
+    echo "nixarchy-install: cannot verify the post-partitioning table." >&2
+    exit 1
+  }
+  # The two new nixarchy partitions are expected. Require every old partition
+  # to remain byte-for-byte identical, while deliberately ignoring additions.
+  if ! jq -e --slurpfile before "$partition_snapshot.partitions" --slurpfile after "$current_file" '
+    ($before[0]) as $expected |
+    ($after[0]) as $actual |
+    all($expected[]; . as $partition | any($actual[]; . == $partition))
+  ' >/dev/null; then
+    echo "nixarchy-install: an existing partition changed during partitioning." >&2
+    echo "Refusing to continue; the installation did not format any existing partition." >&2
+    exit 1
+  fi
+  rm -f "$current_file"
+}
+
+detect_bitlocker() {
+  local part type fstype
+  while read -r part _ fstype; do
+    [ -b "$part" ] || continue
+    type=$(blkid -p -o value -s TYPE "$part" 2>/dev/null || true)
+    case "${type,,}:${fstype,,}" in
+      bitlocker*:*)
+        echo "nixarchy-install: BitLocker was detected on $part." >&2
+        echo "Suspend or disable BitLocker in Windows before using free-space install." >&2
+        return 1
+        ;;
+    esac
+  done < <(lsblk -nrpo NAME,TYPE,FSTYPE "$device" 2>/dev/null)
+}
+
+detect_windows_partuuid() {
+  local part type fstype mountpoint loader uuid boot_disk found_uuid=""
+  boot_disk=$(boot_medium)
+  while read -r part type fstype; do
+    [ "$type" = part ] || continue
+    case "${fstype,,}" in
+      vfat | fat | fat12 | fat16 | fat32 | msdos) ;;
+      *) continue ;;
+    esac
+    if [ -n "$boot_disk" ]; then
+      case "$part" in
+        "$boot_disk"*) continue ;;
+      esac
+    fi
+    mountpoint=$(mktemp -d /run/nixarchy-install/windows-esp.XXXXXX)
+    if mount -o ro,nosuid,nodev,noexec "$part" "$mountpoint" 2>/dev/null; then
+      loader=$(find "$mountpoint/EFI/Microsoft/Boot" -maxdepth 1 -type f \
+        -iname bootmgfw.efi -print -quit 2>/dev/null || true)
+      uuid=$(lsblk -no PARTUUID "$part" 2>/dev/null || true)
+      umount "$mountpoint" || {
+        rmdir "$mountpoint" 2>/dev/null || true
+        echo "nixarchy-install: could not unmount the detected Windows ESP." >&2
+        return 1
+      }
+      rmdir "$mountpoint" 2>/dev/null || true
+      if [ -n "$loader" ]; then
+        if ! [[ $uuid =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]; then
+          echo "nixarchy-install: found a Windows loader without a valid PARTUUID." >&2
+          return 1
+        fi
+        if [ -n "$found_uuid" ] && [ "$found_uuid" != "$uuid" ]; then
+          echo "nixarchy-install: found Windows loaders on multiple ESPs." >&2
+          echo "Refusing to guess which Windows installation to chainload." >&2
+          return 1
+        fi
+        found_uuid=$uuid
+      fi
+    else
+      rmdir "$mountpoint" 2>/dev/null || true
+      echo "nixarchy-install: could not inspect a FAT partition while looking for Windows." >&2
+      echo "Refusing to guess which bootloader should be chainloaded." >&2
+      return 1
+    fi
+  done < <(lsblk -nrpo NAME,TYPE,FSTYPE 2>/dev/null)
+  [ -z "$found_uuid" ] || printf '%s\n' "$found_uuid"
+}
+
+prepare_free_install() {
+  local json
+  json=$(partition_json "$device") || {
+    echo "nixarchy-install: cannot read the target partition table." >&2
+    exit 1
+  }
+  [ "$(printf '%s\n' "$json" | jq -r '.partitiontable.label // ""')" = gpt ] || {
+    echo "nixarchy-install: free-space install requires a GPT disk." >&2
+    exit 1
+  }
+  free_region=$(largest_free_region "$json" || true)
+  [ -n "$free_region" ] || {
+    echo "nixarchy-install: no contiguous free region of at least 32 GiB exists on $device." >&2
+    echo "No existing partition was touched." >&2
+    exit 1
+  }
+  if printf '%s\n' "$json" | jq -e '
+    any(.partitiontable.partitions[]?; (.name // "") == "nixarchy-esp" or
+      (.name // "") == "nixarchy-root")
+  ' >/dev/null; then
+    echo "nixarchy-install: the target already contains a reserved nixarchy partition label." >&2
+    echo "Refusing to reuse an ambiguous by-partlabel path." >&2
+    exit 1
+  fi
+  record_partition_state "$json"
+  detect_bitlocker || exit 1
+  windows_partuuid=$(detect_windows_partuuid || true)
+}
+
 # Encryption is on unless the user opts out, matching upstream: the hint is dim
 # and Ctrl+C at the warning is the way out. That is upstream's shape, and it
 # means the safe answer is the one you get by doing nothing.
 ask_encrypt() {
   ui_screen "Ready to install"
-  ui_left "\e[33mEverything on $device will be overwritten. There is no recovery possible.\e[0m"
+  if [ "$install_mode" = free ]; then
+    ui_left "\e[33mOnly the selected unallocated region on $device will be used.\e[0m"
+    ui_left "\e[90mExisting partitions will not be formatted or overwritten.\e[0m"
+  else
+    ui_left "\e[33mEverything on $device will be overwritten. There is no recovery possible.\e[0m"
+  fi
   ui_left "\e[90mPress Ctrl+C for an unencrypted install.\e[0m"
   echo
 
@@ -323,7 +580,9 @@ confirm_summary() {
     printf 'Timezone,%s\n' "$timezone"
     printf 'Keyboard,%s\n' "$keymap"
     printf 'Disk,%s\n' "$device"
+    printf 'Install mode,%s\n' "$install_mode"
     printf 'Encrypted,%s\n' "$encrypt"
+    [ -n "$windows_partuuid" ] && printf 'Windows,%s\n' "detected (ESP preserved)"
   } | gum table --separator ',' --print --columns "Setting,Value" | ui_indent
   echo
   gum confirm --padding "$(ui_gum_pad)" "Does this look right?"
@@ -368,6 +627,7 @@ read_answers() {
     # machine called nixarchy that nobody asked for.
     case $key in
       device) device=$value ;;
+      install_mode) install_mode=$value ;;
       encrypt) encrypt=$value ;;
       luks_passphrase) luks_passphrase=$value ;;
       hostname) hostname=$value ;;
@@ -397,11 +657,15 @@ read_answers() {
 }
 
 validate_answers() {
-  local problems=() why
+  local problems=() why boot_disk
 
   # Collected rather than reported one at a time: a test author should not have
   # to fix the same file eight times to learn what it is missing.
   [ -n "$device" ] || problems+=("device: required")
+  case $install_mode in
+    whole | free) ;;
+    *) problems+=("install_mode: must be whole or free, got: $install_mode") ;;
+  esac
   [ -n "$encrypt" ] || problems+=("encrypt: required (yes or no)")
   [ -n "$hostname" ] || problems+=("hostname: required")
   [ -n "$username" ] || problems+=("username: required")
@@ -415,6 +679,11 @@ validate_answers() {
     elif [ "$(lsblk -dno TYPE "$device" 2>/dev/null)" != "disk" ]; then
       # A partition here would be formatted as though it were the whole disk.
       problems+=("device: $device is not a whole disk")
+    else
+      boot_disk=$(boot_medium)
+      if [ -n "$boot_disk" ] && [ "$device" = "$boot_disk" ]; then
+        problems+=("device: $device is the boot medium")
+      fi
     fi
   fi
 
@@ -476,6 +745,12 @@ write_flake() {
     subst "$f" '@timezone@' "$timezone"
     subst "$f" '@keymap@' "$keymap"
     subst "$f" '@password_hash@' "$password_hash"
+    if [ -n "$windows_partuuid" ]; then
+      subst "$f" '@windows_partuuid@' "\"$windows_partuuid\""
+    else
+      subst "$f" '@windows_partuuid@' 'null'
+    fi
+    subst "$f" '@install_mode@' "$install_mode"
     # Quoted in the template because a bare token is not parseable Nix; the
     # quotes go with the token. An encrypted disk has already authenticated the
     # user by the time a greeter would ask, so autologin follows encryption.
@@ -492,6 +767,37 @@ write_flake() {
 }
 
 format_disk() {
+  if [ "$install_mode" = free ]; then
+    local start size end esp_sectors current
+    start=${free_region%% *}
+    size=${free_region##* }
+    esp_sectors=$(( (ESP_BYTES + sector_size - 1) / sector_size ))
+    [ "$size" -gt "$esp_sectors" ] || {
+      echo "nixarchy-install: the selected free region cannot hold the ESP and root." >&2
+      exit 1
+    }
+    current=$(partition_json "$device") || {
+      echo "nixarchy-install: cannot re-read the target partition table." >&2
+      exit 1
+    }
+    verify_partition_state_before_write "$current"
+    end=$((start + esp_sectors - 1))
+    # `0` asks sgdisk for the next free GPT partition number. The subsequent
+    # type/name options refer to the partition created by that --new option.
+    # There is no --clear, no positional partition declaration and no fallback.
+    sgdisk --new=0:"$start":"$end" \
+      --typecode=0:EF00 --change-name=0:nixarchy-esp "$device"
+    sgdisk --new=0:"$((start + esp_sectors))":"$((start + size - 1))" \
+      --typecode=0:8300 --change-name=0:nixarchy-root "$device"
+    partprobe "$device"
+    udevadm settle
+    current=$(partition_json "$device") || {
+      echo "nixarchy-install: cannot read the partition table after creating nixarchy partitions." >&2
+      exit 1
+    }
+    verify_existing_partitions "$current"
+  fi
+
   # The passphrase file disko's passwordFile points at. Written with umask 077,
   # removed as soon as the format is done; it never reaches the installed
   # system, whose initrd prompts instead.
@@ -756,10 +1062,13 @@ main() {
   if [ -n "$answers_file" ]; then
     read_answers "$answers_file"
     validate_answers
+    [ "$install_mode" = free ] && prepare_free_install
   else
     ask_keymap
     ask_identity
     ask_device
+    ask_install_mode
+    [ "$install_mode" = free ] && prepare_free_install
     ask_encrypt
     confirm_summary || exit 1
   fi

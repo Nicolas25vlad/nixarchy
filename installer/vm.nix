@@ -126,7 +126,7 @@
   '';
 
   # The installer refuses to run where /sys/firmware/efi does not exist, and is
-  # right to: the layout is an ESP with systemd-boot and there is no BIOS path.
+  # right to: the layout is an ESP with Limine and there is no BIOS path.
   virtualisation = {
     memorySize = 8192;
     cores = 4;

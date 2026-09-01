@@ -196,9 +196,9 @@
     # boot.loader.external satisfies the assertion that some bootloader is
     # configured while installing nothing, which is right here: the next boot
     # comes from the host's run script, not from this disk.
-    # Both, for the same reason: host.nix configures systemd-boot because a
-    # real machine needs one, and there is no disk here for either to install
-    # onto. Left enabled they are two bootloaders and the assertion fires.
+    # Both, for the same reason: host.nix configures Limine because a real
+    # machine needs one, and there is no disk here for either to install onto.
+    # Left enabled they are two bootloaders and the assertion fires.
     loader = {
       grub.enable = lib.mkForce false;
       systemd-boot.enable = lib.mkForce false;
