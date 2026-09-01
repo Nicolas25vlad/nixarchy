@@ -71,11 +71,24 @@ jobs:
         run: |
           iso=$(nix build .#iso --no-link --print-out-paths)/iso
           size=$(du -h "$iso"/*.iso | cut -f1)
-          closure=$(nix path-info -Sh \
-            .#nixosConfigurations.reference.config.system.build.toplevel \
-            | awk '{print $2}')
+          # `read`, not awk. The runner's step shell is a Nix bash whose PATH
+          # carries coreutils but not gawk, so the first real nightly died
+          # here with `awk: command not found` and exit 127 -- after the ISO
+          # had built perfectly well. Bash can split two fields by itself.
+          read -r _ closure < <(nix path-info -Sh \
+            .#nixosConfigurations.reference.config.system.build.toplevel)
           printf '| | |\n|---|---|\n| ISO | %s |\n| closure | %s |\n' \
             "$size" "$closure" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The number the size report prints is only useful if something acts on
+      # it. This is that. It builds the network image too, which is the one
+      # with a hard ceiling: over 2 GiB it stops fitting in a release as a
+      # single asset.
+      - name: Both images are inside their budgets
+        run: |
+          set -o pipefail
+          nix build .#checks.x86_64-linux.iso-budget --no-link --print-build-logs 2>&1 \
+            | tail -5 | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Install from it with no network device present
         run: nix build .#checks.x86_64-linux.install-iso --print-build-logs
@@ -120,6 +133,11 @@ jobs:
       - name: Open or update an issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This job has no checkout, so `gh` has no git remote to infer the
+          # repository from and every call failed with "not a git repository".
+          # The safety net that tells you a nightly broke was itself broken,
+          # which is the worst place for this bug to have been.
+          GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           title="nightly: the install checks are failing"

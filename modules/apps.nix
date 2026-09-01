@@ -193,6 +193,98 @@ let
     )
   );
 
+  # The catalogue from data/services.nix, as commented-out lines.
+  #
+  # Two shapes, because the catalogue has two kinds and the difference is the
+  # whole point. A "bundled" entry writes the nixarchy option, because nixarchy
+  # does something upstream does not. A "plain" entry writes the REAL upstream
+  # line -- `services.openssh.enable = true;` -- because there is nothing to
+  # add, and a nixarchy alias for a one-line toggle would only be a second
+  # vocabulary to unlearn the moment they read anyone else's configuration.
+  serviceCatalogue = import ../data/services.nix;
+
+  serviceRow =
+    name: svc:
+    let
+      suffix = if svc ? note then "  # ${svc.note}" else "";
+      line =
+        if svc.kind == "bundled" then
+          "programs.nixarchy.services.${name}.enable = true;"
+        else
+          "${lib.concatStringsSep "." svc.option}.${svc.optionAttr or "enable"} = true;";
+    in
+    "    # ${line}  #@ ${name}${suffix}\n";
+
+  serviceCategories = lib.unique (map (s: s.category) (lib.attrValues serviceCatalogue));
+
+  serviceCategoryBlock =
+    category:
+    let
+      rows = lib.filterAttrs (_: s: s.category == category) serviceCatalogue;
+      # A fixed rule rather than one padded to a column: the box-drawing
+      # character is three bytes and fixedWidthString counts bytes, so the
+      # arithmetic that looks right produces a negative width.
+      header = "    # ── ${category} ──────────────────────────────────────\n";
+    in
+    header + lib.concatStrings (lib.mapAttrsToList serviceRow rows) + "\n";
+
+  servicesTemplate = pkgs.writeText "nixarchy-services.nix" ''
+    # Services and system settings, as NixOS configuration.
+    #
+    # The companion to apps.nix. An app is a package; a service is a decision
+    # about the machine. Uncomment what you want -- or pick it from the menu --
+    # then run
+    #
+    #     nixarchy-apply
+    #
+    # Two kinds of line appear below and the difference is deliberate:
+    #
+    #   programs.nixarchy.services.X   nixarchy bundles several options here,
+    #                                  because turning the thing on usefully
+    #                                  takes more than one.
+    #
+    #   services.X.enable              the real NixOS option, because there was
+    #                                  nothing for nixarchy to add. This is the
+    #                                  line every wiki page will show you, and
+    #                                  it is the same line here.
+    #
+    # This file is a NixOS module and nothing stops you writing any option in
+    # it. Upstream's own settings work alongside ours -- if you enable
+    # syncthing below, `services.syncthing.settings.folders` still does what
+    # its documentation says.
+    #
+    # This file is yours. Nothing regenerates or overwrites it once created;
+    # the current full list is always at /etc/nixarchy/services-template.nix.
+    { ... }:
+    {
+    ${lib.concatStrings (map serviceCategoryBlock serviceCategories)}}
+  '';
+
+  # No catalogue, on purpose.
+  advancedTemplate = pkgs.writeText "nixarchy-advanced.nix" ''
+    # Anything at all.
+    #
+    # apps.nix is a list nixarchy generated and services.nix is a catalogue it
+    # curated. This file has neither, because at some point the answer to "how
+    # do I do X on NixOS" is a NixOS option nobody put on a list, and a curated
+    # desktop that has no room for that is a cage.
+    #
+    # It is an ordinary NixOS module. Every option in nixpkgs is available:
+    #
+    #   services.openssh.settings.PermitRootLogin = "no";
+    #   boot.kernelParams = [ "quiet" ];
+    #   users.users.you.extraGroups = [ "dialout" ];
+    #
+    # `nixarchy-search` writes here when you pick an option from it. Nothing
+    # else touches this file.
+    #
+    # If you find yourself writing the same thing here on every machine, that
+    # is worth an issue -- it probably belongs in the catalogue.
+    { ... }:
+    {
+    }
+  '';
+
   appsTemplate = pkgs.writeText "nixarchy-apps.nix" ''
     # Applications available through the Omarchy menu, as NixOS configuration.
     #
@@ -250,6 +342,40 @@ let
           label = "Search";
           action = "omarchy-launch-floating-terminal-with-presentation nixarchy-search";
           description = "Every package, NixOS option and Omarchy app, in one picker";
+        };
+
+        # Every rebuild leaves the last one bootable and nothing said so.
+        #
+        # Under System because it is the system this restores. Upstream's
+        # nearest equivalent is a snapper snapshot picked from the boot menu,
+        # which is a different thing on NixOS: `@` here holds almost no
+        # operating system, so a generation is what carries one. The snapshot
+        # rows under Trigger cover the other half -- home, and service state
+        # -- which no generation touches.
+        "system.rollback" = {
+          icon = "󰕍";
+          label = "Roll back";
+          action = "omarchy-launch-floating-terminal-with-presentation nixarchy-rollback";
+          description = "Switch to an earlier system generation. Your home directory is not touched";
+        };
+
+        # Snapshots under Trigger, beside the other "do a thing now" rows.
+        #
+        # Upstream's are taken by its updater and restored from the boot menu,
+        # and neither happens here. These are new rows, so they carry their
+        # own label and icon.
+        "trigger.snapshot" = {
+          icon = "󰆓";
+          label = "Snapshot home";
+          action = "omarchy-launch-floating-terminal-with-presentation omarchy-snapshot create";
+          description = "Save your home directory as it is now. Instant, and costs nothing until files change";
+        };
+
+        "trigger.snapshot.restore" = {
+          icon = "󰦛";
+          label = "Restore from snapshot";
+          action = "omarchy-launch-floating-terminal-with-presentation omarchy-snapshot restore";
+          description = "Open an earlier version of your home directory and copy back what you want";
         };
 
         "install.aur" = {
@@ -362,6 +488,32 @@ let
               }
           )
         ) (lib.filterAttrs (_: a: a ? menuId) apps)
+      )
+      # The services catalogue, as menu rows.
+      #
+      # Most of these are ids upstream does not ship -- Omarchy's menu has no
+      # "turn on SSH" row because on Arch that is not a menu's business. The
+      # generator takes a new id as long as the override names the row itself,
+      # which is why label and icon are here; install.search arrived the same
+      # way. Where upstream DOES have a row, the catalogue entry carries its
+      # menuId and this overrides it in place -- tailscale is that case, and
+      # carrying the id across is what keeps the generator from failing on a
+      # row nothing maps.
+      // lib.listToAttrs (
+        lib.mapAttrsToList (
+          name: svc:
+          lib.nameValuePair (svc.menuId or "install.service.${name}") {
+            icon = svc.icon or "󰒓";
+            inherit (svc) label;
+            action = "nixarchy-service-enable ${name}";
+            # Dim when the marked line is live, which is the same question
+            # nixarchy-service-enable asks. Not the app rows' test: a plain
+            # entry's line begins with services.openssh, not with the id, so
+            # matching on the id would never fire.
+            disabled = "grep -qE '^[[:space:]]*[^#[:space:]].*#@ ${name}([[:space:]]|$)' $HOME/.config/nixarchy/services.nix";
+            description = svc.note;
+          }
+        ) serviceCatalogue
       )
       // cfg.menu.extraEntries
     )
@@ -540,6 +692,8 @@ in
         # always diff their file against the current full list.
         environment.etc = {
           "nixarchy/apps-template.nix".source = appsTemplate;
+          "nixarchy/services-template.nix".source = servicesTemplate;
+          "nixarchy/advanced-template.nix".source = advancedTemplate;
           "nixarchy/omarchy-menu.jsonc".source = menuExtension;
         };
 
@@ -547,6 +701,217 @@ in
           # Uncomments one app in ~/.config/nixarchy/apps.nix. Matching is on
           # the `#@ <id>` marker, not a line number or a label, so the file
           # survives being reformatted, reordered or annotated by hand.
+          # What the catalogue offers that your file has never heard of.
+          #
+          # The seeded files are written once and never touched again, which is
+          # correct -- they are the user's, and overwriting one would silently
+          # undo a selection. The consequence is that an entry added after a
+          # machine was installed never appears on it: no `#@` marker, so
+          # nixarchy-app-enable answers "no app 'x' in $file" and the menu row
+          # is dead. Until now the only way to find that out was to diff
+          # against /etc/nixarchy/apps-template.nix by hand, and nothing said
+          # so.
+          (pkgs.writeShellApplication {
+            name = "nixarchy-catalogue-diff";
+            runtimeInputs = [
+              pkgs.gnugrep
+              pkgs.gnused
+              pkgs.coreutils
+            ];
+            text = ''
+              add=false
+              case "''${1:-}" in
+                --add) add=true ;;
+                "") ;;
+                *)
+                  echo "usage: nixarchy-catalogue-diff [--add]" >&2
+                  exit 2
+                  ;;
+              esac
+
+              dir="''${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy"
+              total=0
+
+              for part in apps services advanced; do
+                user="$dir/$part.nix"
+                tpl="/etc/nixarchy/$part-template.nix"
+                [ -f "$user" ] && [ -f "$tpl" ] || continue
+
+                # Compared by marker, never by line: the file's own header
+                # invites reformatting, reordering and annotating, so anything
+                # positional would report a file somebody had tidied as full of
+                # holes. A marker with a space after #@ is a catalogue row; the
+                # others -- #@pkg, #@opt, #@pkgs-begin -- are the user's own and
+                # a template never has them.
+                missing=$(
+                  comm -23 \
+                    <(grep -oE "#@ [a-z0-9_.-]+" "$tpl" | sort -u) \
+                    <(grep -oE "#@ [a-z0-9_.-]+" "$user" | sort -u)
+                )
+                [ -n "$missing" ] || continue
+
+                count=$(printf '%s\n' "$missing" | grep -c . || true)
+                total=$((total + count))
+                echo "$part.nix is missing $count:"
+
+                rows=""
+                while IFS= read -r marker; do
+                  [ -n "$marker" ] || continue
+                  echo "  ''${marker#\#@ }"
+                  row=$(grep -F -- "$marker" "$tpl" | head -1)
+                  # App rows are written relative to programs.nixarchy.apps,
+                  # which they sit inside in the template. Appended at the end
+                  # of a file they would be outside it -- harmless while
+                  # commented and broken the moment somebody uncommented one.
+                  # Written in full they are correct wherever they land. A
+                  # second `programs.nixarchy.apps = { }` block would not be:
+                  # two definitions of one attribute in one set is an error,
+                  # not a merge.
+                  if [ "$part" = apps ]; then
+                    row=$(printf '%s' "$row" |
+                      sed -E "s/^([[:space:]]*#[[:space:]]*)/\1programs.nixarchy.apps./")
+                  fi
+                  rows="$rows$row
+              "
+                done <<MARKERS
+              $missing
+              MARKERS
+
+                if [ "$add" = true ]; then
+                  # Before the module's closing brace, not after it. Appending
+                  # to the end of the file puts the rows outside the attrset,
+                  # where they parse -- they are comments -- and stop parsing
+                  # the moment somebody uncomments one, because that is content
+                  # after the final `}`. Which is the same trap the full-path
+                  # rewrite above exists to avoid, one line further down.
+                  close=$(grep -n "^}" "$user" | tail -1 | cut -d: -f1)
+                  if [ -z "$close" ]; then
+                    echo "  $user has no closing brace on its own line;" >&2
+                    echo "  add these by hand rather than let this guess:" >&2
+                    printf '%s' "$rows" >&2
+                    continue
+                  fi
+                  tmp=$(mktemp)
+                  head -n "$((close - 1))" "$user" >"$tmp"
+                  {
+                    echo ""
+                    echo "  # ── Added by nixarchy-catalogue-diff, $(date +%Y-%m-%d) ──"
+                    printf '%s' "$rows"
+                  } >>"$tmp"
+                  tail -n "+$close" "$user" >>"$tmp"
+                  cat "$tmp" >"$user"
+                  rm -f "$tmp"
+                  echo "  appended to $user"
+                fi
+              done
+
+              if [ "$total" -eq 0 ]; then
+                echo "your files have everything the catalogue offers"
+                exit 0
+              fi
+
+              if [ "$add" = false ]; then
+                echo ""
+                echo "Run 'nixarchy-catalogue-diff --add' to append these as"
+                echo "commented-out lines. Nothing you have written changes:"
+                echo "only new lines, at the end, under a dated heading."
+              fi
+            '';
+          })
+
+          (pkgs.writeShellApplication {
+            name = "nixarchy-service-enable";
+            runtimeInputs = [
+              pkgs.gnused
+              pkgs.gnugrep
+              pkgs.coreutils
+              cfg.package
+            ];
+            text = ''
+              file="''${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy/services.nix"
+              id="''${1:?usage: nixarchy-service-enable <service-id>}"
+
+              # Validated before it reaches sed and grep, which the app scripts
+              # do not do: the id is interpolated into a regex, and an id with a
+              # slash or a bracket in it would either fail obscurely or match
+              # something nobody meant. Ids come from data/services.nix and look
+              # like this; anything else is a typo or a caller with a bug.
+              case "$id" in
+                *[!a-z0-9_-]* | "")
+                  echo "nixarchy: '$id' is not a service id" >&2
+                  exit 2
+                  ;;
+              esac
+
+              [ -f "$file" ] || { echo "no $file -- log in again to have it created" >&2; exit 1; }
+
+              if ! grep -qE "#@ $id([[:space:]]|\$)" "$file"; then
+                echo "nixarchy: no service '$id' in $file" >&2
+                echo "  The full list is /etc/nixarchy/services-template.nix." >&2
+                exit 1
+              fi
+
+              # Already on if the marked line is not commented out.
+              #
+              # Deliberately not the app scripts' test, which greps for
+              # `^[[:space:]]*<id>.enable` -- that cannot work here, because a
+              # plain entry's line begins with services.openssh, not with the
+              # id. Asking whether the marked line is live is also the more
+              # honest question: it does not answer "yes" to `enable = false;`.
+              if grep -qE "^[[:space:]]*[^#[:space:]].*#@ $id([[:space:]]|\$)" "$file"; then
+                echo "$id is already enabled; run nixarchy-apply to build it"
+                exit 0
+              fi
+
+              sed -i -E "/#@ $id([[:space:]]|\$)/ s/^([[:space:]]*)# ?/\1/" "$file"
+
+              queued=$(grep -cE "^[[:space:]]*[^#[:space:]].*#@ " "$file" || true)
+              if command -v omarchy-notification-send >/dev/null 2>&1; then
+                omarchy-notification-send -r 8471 -t 8000 -u normal \
+                  "$id queued -- not enabled yet" \
+                  "$queued selected. Click here, or Install > Apply changes, to run nixos-rebuild." \
+                  --exec omarchy-launch-floating-terminal-with-presentation nixarchy-apply || true
+              fi
+              echo "enabled $id in $file ($queued queued)"
+              echo "run 'nixarchy-apply' when you have picked everything you want"
+            '';
+          })
+
+          (pkgs.writeShellApplication {
+            name = "nixarchy-service-disable";
+            runtimeInputs = [
+              pkgs.gnused
+              pkgs.gnugrep
+              pkgs.coreutils
+            ];
+            text = ''
+              file="''${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy/services.nix"
+              id="''${1:?usage: nixarchy-service-disable <service-id>}"
+
+              case "$id" in
+                *[!a-z0-9_-]* | "")
+                  echo "nixarchy: '$id' is not a service id" >&2
+                  exit 2
+                  ;;
+              esac
+
+              [ -f "$file" ] || { echo "no $file" >&2; exit 1; }
+
+              if ! grep -qE "#@ $id([[:space:]]|\$)" "$file"; then
+                echo "nixarchy: no service '$id' in $file" >&2
+                exit 1
+              fi
+
+              # Comment the marked line back out. Turning a service off is not
+              # the same as uninstalling it: the daemon stops, and whatever it
+              # wrote -- a Syncthing database, an authorised key -- stays where
+              # it is. Removing that is the user's call and not this script's.
+              sed -i -E "/#@ $id([[:space:]]|\$)/ s/^([[:space:]]*)([^[:space:]#])/\1# \2/" "$file"
+              echo "disabled $id in $file"
+              echo "run 'nixarchy-apply' to rebuild without it"
+            '';
+          })
+
           (pkgs.writeShellApplication {
             name = "nixarchy-app-enable";
             runtimeInputs = [
@@ -1212,12 +1577,72 @@ in
 
               # A flake cannot read a file outside its own tree, so the
               # selection is copied in rather than imported from $HOME.
-              if [ -f "$dest" ] && diff -q "$file" "$dest" >/dev/null; then
-                echo "$dest is already up to date."
+              #
+              # Three files now, into $flake/nixarchy/, with nixarchy-apps.nix
+              # left as a module that imports them. That last part is the whole
+              # reason for the indirection: the README has been telling people
+              # to add `imports = [ ./nixarchy-apps.nix ];` since the beginning,
+              # and on a machine nixarchy does not own, asking them to add two
+              # more lines is not a thing this project gets to do. The name they
+              # already wrote keeps working and gains two files behind it.
+              #
+              # Safe to overwrite because nixarchy-apps.nix has always been a
+              # copy this script regenerates, never something the user wrote --
+              # and the copy it used to hold is written to nixarchy/apps.nix in
+              # the same run, before the stub replaces it.
+              srcdir="''${XDG_CONFIG_HOME:-$HOME/.config}/nixarchy"
+              mkdir -p "$flake/nixarchy"
+
+              imports=""
+              copied=""
+              for part in apps services advanced; do
+                src="$srcdir/$part.nix"
+                [ -f "$src" ] || continue
+                dst="$flake/nixarchy/$part.nix"
+                imports="$imports ./nixarchy/$part.nix"
+                if [ -f "$dst" ] && diff -q "$src" "$dst" >/dev/null; then
+                  continue
+                fi
+                cp "$src" "$dst"
+                copied="$copied $part"
+              done
+
+              # Only what exists is imported. A machine seeded before
+              # services.nix existed has two files, not three, and a stub
+              # importing a path that is not there fails to evaluate.
+              {
+                echo "# Generated by nixarchy-apply. Do not edit -- your files"
+                echo "# are ~/.config/nixarchy/{apps,services,advanced}.nix and"
+                echo "# this is regenerated from them on every apply."
+                echo "{"
+                echo "  imports = [$imports ];"
+                echo "}"
+              } >"$dest"
+
+              if [ -n "$copied" ]; then
+                echo "copied ->$copied"
               else
-                cp "$file" "$dest"
-                echo "copied selection -> $dest"
-                echo "(import it from your flake: imports = [ ./nixarchy-apps.nix ];)"
+                echo "$flake is already up to date."
+              fi
+
+              # Stage what was written, or a flake in a git worktree cannot see
+              # it. This is not a nicety: git makes untracked files invisible to
+              # the evaluator, so a fresh nixarchy/services.nix fails with "path
+              # does not exist" -- the trap installer/mkFlake.nix documents and
+              # the installer works around by staging at install time.
+              #
+              # Guarded: /etc/nixos is root-owned, and a failure to stage should
+              # print the fix rather than abort an apply that has already
+              # copied everything correctly.
+              if [ -e "$flake/.git" ]; then
+                git -C "$flake" add -A nixarchy nixarchy-apps.nix 2>/dev/null || {
+                  echo
+                  echo "NOTE: could not stage the copies in $flake."
+                  echo "  A flake in a git repository sees only tracked files,"
+                  echo "  so the rebuild may fail with \"path does not exist\"."
+                  echo "  Fix with: sudo git -C $flake add -A"
+                  echo
+                }
               fi
 
               # Whether anything in the flake actually imports it.

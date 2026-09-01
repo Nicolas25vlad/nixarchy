@@ -3,6 +3,19 @@
   lib,
   pkgs,
   modulesPath,
+  # Whether this image carries the desktop or downloads it. True is the real
+  # product -- see the header. False builds the same installer over the network
+  # instead, which is the same install path the `install` check has always
+  # exercised: without the marker file at the bottom of this file, install.sh
+  # keeps the substituters it already has.
+  #
+  # Passed by both nixosConfigurations, with no default here on purpose. A
+  # module argument's default is not a function default: the module system
+  # cannot see one without consulting _module.args, which needs `config`,
+  # which is what is being evaluated -- so `offline ? true` fails the ISO
+  # build outright rather than defaulting. Making both callers say which
+  # image they want is also the honest reading of a flag this load-bearing.
+  offline,
   ...
 }:
 # The live image: boot it, answer the questions, get a machine.
@@ -254,11 +267,57 @@ in
     #
     # Not nixosConfigurations.vm: it imports qemu-vm.nix and carries guest
     # tooling nobody installs on metal.
-    storeContents =
+    #
+    # This is the whole difference between the two images. Dropped entirely
+    # when `offline` is false: the desktop then comes from the binary caches
+    # named under nix.settings below.
+    #
+    # ## The size budget, measured 2026-09-01
+    #
+    #   reference closure   15.3 GiB unpacked   what the install produces
+    #   packages.iso         5.6 GB             this image, offline
+    #   packages.iso-net     1.54 GiB           the network image
+    #
+    # Budgets, enforced by checks.iso-budget rather than written down and
+    # forgotten:
+    #
+    #   iso       6.5 GiB   headroom over 5.6, tight enough to notice a jump
+    #   iso-net   2 GiB     NOT a preference. GitHub refuses a release asset
+    #                       over 2 GiB, so crossing this does not make the
+    #                       download annoying, it makes it impossible to
+    #                       publish as one file. See .github/workflows/
+    #                       release.yml, which splits the image above and
+    #                       ships this one whole.
+    #
+    # ## No apps on the image, deliberately
+    #
+    # The reference host enables no programs.nixarchy.apps.*, and should not
+    # start. The 52 selectable apps are a post-install concern, reached
+    # through the Install menu once the machine is the user's: several are
+    # unfree, several are hundreds of megabytes each, and baking even the free
+    # half would roughly double an image for apps most people never pick. The
+    # base desktop is what everyone gets and therefore what is worth carrying.
+    #
+    # ## Compression: nothing to tune here
+    #
+    # isoImage.squashfsCompression is `zstd -Xcompression-level 19` -- the
+    # nixpkgs default, already, so the argument for moving off xz (~100 MB/s
+    # decompressing a live root read cold, against zstd's ~900 MB/s) is one
+    # this image already wins. Level 19 over level 6 costs build time on a
+    # machine with plenty and saves a download for every user, which is the
+    # right way round.
+    #
+    # Storing the tree UNCOMPRESSED inside the squashfs -- what Omarchy does
+    # with its package mirror -- does not port. Theirs is already-compressed
+    # pacman packages, where the outer compression buys nothing. A Nix store
+    # is not: 15.3 GiB becomes 5.6 GB here, 2.7x. Uncompressed would mean a
+    # ~15 GB image to save decompression on a file read once.
+    storeContents = lib.optionals offline (
       map (r: r.toplevel) references
       # The installer runs this before anything else, and it is not part of
       # any runtime closure.
-      ++ map (r: r.diskoScript) references;
+      ++ map (r: r.diskoScript) references
+    );
   };
 
   # Everything needed to EVALUATE the generated flake, and to build the few
@@ -267,9 +326,15 @@ in
   # extraDependencies rather than storeContents for these: the option's stated
   # purpose is "paths that must be in the store for this system to be usable",
   # which is exactly the claim being made.
+  #
+  # inputSources stays on BOTH images. It is the flake sources rather than the
+  # desktop, it costs little, and it means evaluation starts immediately
+  # instead of fetching a nixpkgs tarball before the first question. The build
+  # environment below is offline-only: with a network, anything missing is
+  # downloaded rather than built.
   system.extraDependencies =
     inputSources
-    ++ [
+    ++ lib.optionals offline [
       # nixos-install builds roughly twenty derivations for the real hostname,
       # user and disk -- etc, users-groups.json, system-path, the bootloader
       # entry, the toplevel -- and their build inputs are in no runtime
@@ -301,9 +366,27 @@ in
       pkgs.python3
       pkgs.jq
     ]
-    ++ buildInputsOfWhatChanges;
+    ++ lib.optionals offline buildInputsOfWhatChanges;
 
   nix.settings = {
+    # flake-registry is a flakes setting, and nix.conf is validated at build
+    # time: setting it without this fails the ISO build with "Ignoring setting
+    # 'flake-registry' because experimental feature 'flakes' is not enabled",
+    # which is at least an honest error rather than a silently ignored line.
+    #
+    # install.sh passes --extra-experimental-features on every nix call
+    # because a stock live medium may not have them. This is not a stock live
+    # medium.
+    experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
+  }
+  # Everything below is one choice made twice. The offline image must be told
+  # there is nothing to fetch; the network image must be told where to fetch
+  # from. Neither set is a sensible default for the other, and the failure when
+  # they are crossed is a hang rather than an error.
+  // lib.optionalAttrs offline {
     # Nothing to fetch, and nothing that may try.
     #
     # An empty list is not the same as an unreachable one. With a substituter
@@ -351,18 +434,22 @@ in
     # that by construction has nothing to download.
     connect-timeout = 1;
     download-attempts = 0;
-
-    # flake-registry is a flakes setting, and nix.conf is validated at build
-    # time: setting it without this fails the ISO build with "Ignoring setting
-    # 'flake-registry' because experimental feature 'flakes' is not enabled",
-    # which is at least an honest error rather than a silently ignored line.
-    #
-    # install.sh passes --extra-experimental-features on every nix call
-    # because a stock live medium may not have them. This is not a stock live
-    # medium.
-    experimental-features = [
-      "nix-command"
-      "flakes"
+  }
+  // lib.optionalAttrs (!offline) {
+    # The same two caches install.sh already knows about and modules/nixos.nix
+    # gives every installed machine. They are not a nicety here: CI builds
+    # checks.reference-toplevel inside a cachix job, so the whole 15.3 GiB
+    # desktop is on nixarchy.cachix.org. Without these the install still
+    # succeeds and takes hours, because it compiles Hyprland.
+    substituters = [
+      "https://cache.nixos.org"
+      "https://nixarchy.cachix.org"
+      "https://hyprland.cachix.org"
+    ];
+    trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "nixarchy.cachix.org-1:05JOuIlsQOWY2/5DQMq7JEA1hwlhgvmMWowMfka8mMM="
+      "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIITemDosxrE9/Kb+PfYvE="
     ];
   };
 
@@ -370,9 +457,28 @@ in
   # from this image and must not reach for a substituter. A marker file rather
   # than a kernel parameter: the installer can also be run by hand from a
   # mounted image, and the file travels with the filesystem.
-  environment.etc."nixarchy-iso".text = ''
-    ${inputs.self.shortRev or "dirty"}
-  '';
+  #
+  # Its ABSENCE is what makes the network image work, and that is the whole
+  # mechanism -- install.sh already carries both cachix substituters and only
+  # clears them when it finds this file. So there is no second install path to
+  # keep working; there is one, and this file switches it.
+  environment.etc =
+    if offline then
+      {
+        "nixarchy-iso".text = ''
+          ${inputs.self.shortRev or "dirty"}
+        '';
+      }
+    else
+      {
+        # The mirror of the above, and the installer's cue to make sure there
+        # is a network before it asks anything else. A marker of its own rather
+        # than "no offline marker": the install check runs with neither, in a
+        # sandbox with no network, and must not be told to go and find one.
+        "nixarchy-iso-net".text = ''
+          ${inputs.self.shortRev or "dirty"}
+        '';
+      };
 
   system.stateVersion = "25.05";
 }

@@ -235,6 +235,19 @@
             ncurses # clear and tput, which the screens are drawn with
             kbd # loadkeys, and the keymap list
             tzdata # the timezone list
+            # Both only used by ask_network, which the offline image returns
+            # from before it reaches either. Carried anyway rather than
+            # conditionally: this is one script, `nix run .#install` on a stock
+            # ISO needs them, and a runtime input that is missing on one image
+            # is a class of bug that only shows up on that image.
+            curl # the connectivity test -- can we reach the binary cache
+            networkmanager # nmcli, for joining a wireless network
+            # The failure and finish screens offer a way out of both. Present
+            # on the live medium anyway; named here so `nix run .#install` on
+            # some other host does not discover them missing at the one moment
+            # a person needs them.
+            systemd # systemctl reboot / poweroff
+            bashInteractive # the shell the failure screen drops into
           ];
           # Spliced at build time the way doctor splices @apps@, so the script
           # never has to find these itself and `nix run` works from anywhere.
@@ -409,6 +422,13 @@
         # network away.
         iso = self.nixosConfigurations.iso.config.system.build.isoImage;
 
+        # The same installer, without the desktop on it. Small enough to
+        # download over a hotel connection, and it fetches the closure from
+        # the binary caches instead of carrying it. Needs a working network
+        # before it can do anything, which is what the wizard's first screen
+        # is for.
+        iso-net = self.nixosConfigurations.iso-net.config.system.build.isoImage;
+
         # A VM that installs onto a blank disk, WITH a network -- which
         # checks.install cannot have, because it is a sandboxed derivation and
         # its whole point is that a rebuild afterwards cannot fetch anything.
@@ -444,7 +464,21 @@
         # The live image. See installer/cd.nix.
         iso = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
+          specialArgs = {
+            inherit inputs;
+            offline = true;
+          };
+          modules = [ ./installer/cd.nix ];
+        };
+
+        # Same module, one argument different. See the `offline` parameter in
+        # installer/cd.nix for what it turns off.
+        iso-net = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = {
+            inherit inputs;
+            offline = false;
+          };
           modules = [ ./installer/cd.nix ];
         };
 
@@ -682,6 +716,60 @@
         # only one of them compiles the difference from source.
         reference-unencrypted-toplevel =
           self.nixosConfigurations.reference-unencrypted.config.system.build.toplevel;
+
+        # Both images, against the budgets recorded in installer/cd.nix.
+        #
+        # A check rather than a comment because a number nobody enforces is a
+        # number that drifts. The nightly runs this; it costs nothing beyond
+        # the ISO builds it already does.
+        #
+        # The iso-net budget is the load-bearing one, and it is not a taste
+        # question: GitHub refuses a release asset over 2 GiB, so an iso-net
+        # that crosses it stops being publishable as a single file and
+        # release.yml would have to start splitting it. Failing here says so
+        # while there is still something to do about it, rather than at the
+        # next tag.
+        iso-budget =
+          let
+            pkgs = pkgsFor.${system};
+            # MiB, as integers: nix has floats but this needs exact bytes, and
+            # 6656 is less to get wrong than 6.5 * 1073741824.
+            images = [
+              {
+                name = "iso";
+                drv = self.packages.${system}.iso;
+                mib = 6656; # 6.5 GiB, over a measured 5.6 GB
+              }
+              {
+                name = "iso-net";
+                drv = self.packages.${system}.iso-net;
+                mib = 2048; # GitHub's release-asset limit, not a preference
+              }
+            ];
+          in
+          pkgs.runCommand "iso-budget" { } (
+            "fail=0\n"
+            + nixpkgs.lib.concatMapStrings (i: ''
+              size=$(stat -Lc %s ${i.drv}/iso/*.iso)
+              budget=$((${toString i.mib} * 1048576))
+              awk -v n=${i.name} -v s="$size" -v b="$budget" \
+                'BEGIN { printf "%-8s %6.2f GiB   budget %5.2f GiB   %s\n", \
+                   n, s/1073741824, b/1073741824, (s > b ? "OVER" : "ok") }'
+              [ "$size" -le "$budget" ] || fail=1
+            '') images
+            + ''
+              if [ "$fail" -ne 0 ]; then
+                echo
+                echo "An image outgrew its budget. Either something large joined the"
+                echo "closure by accident, or the budget in installer/cd.nix needs"
+                echo "raising on purpose -- but iso-net's 2 GiB is GitHub's limit on"
+                echo "a release asset, and cannot be raised, only worked around by"
+                echo "splitting the image the way release.yml splits the other one."
+                exit 1
+              fi
+              touch $out
+            ''
+          );
       });
     };
 }

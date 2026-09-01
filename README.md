@@ -44,7 +44,7 @@ More in [`docs/screenshots/`](docs/screenshots).
 | **`nixarchy` command** | this port's own commands, and a way through to Omarchy's 431 |
 | **Remove menu** | deselects apps, never touches your own config |
 | **Update menu** | `nh os switch --update <flake>` |
-| 56 apps in the selection | 41 from nixpkgs, 5 as NixOS modules, 8 built here, 2 with no equivalent |
+| 55 apps in the selection | 41 from nixpkgs, 4 as NixOS modules, 8 built here, 2 with no equivalent |
 | Learn menu | NixOS wiki, `search.nixos.org` packages and options |
 | Shell functions | bash and zsh source the chain; fish derives it from the same files |
 | RetroArch | 13 libretro cores, resolved from the store rather than `/usr/lib` |
@@ -338,7 +338,7 @@ The notification is clickable and runs the rebuild.
 
 ### Anything the menu does not offer
 
-The 56 apps are the ones Omarchy's own menu lists. Everything else in nixpkgs —
+The 55 apps are the ones Omarchy's own menu lists. Everything else in nixpkgs —
 and every NixOS option — is behind **`Install ▸ Search`**, or `nixarchy-search`
 from a terminal:
 
@@ -361,7 +361,7 @@ from a terminal:
   enter to select · tab for several · esc to cancel
 ```
 
-**137,599 rows: 25,102 NixOS options, 112,443 packages, and 54 of the 56 apps
+**137,599 rows: 25,102 NixOS options, 112,443 packages, and 53 of the 55 apps
 (the two with no nixpkgs equivalent cannot be indexed).** Three kinds,
 one picker, because you should not have to know which kind you want before you
 can look. They are not interchangeable and the rows say so — picking Tailscale
@@ -776,13 +776,51 @@ any conflict to warn you.
 
 ## Installing on a fresh machine
 
-There is an ISO now. Build it, write it to a stick, boot it, and answer nine
+There is an ISO now. Download it, write it to a stick, boot it, and answer nine
 questions.
 
+**[Releases](https://github.com/olafkfreund/nixarchy/releases)** carry prebuilt
+images from `v4.0.1-3` onward, built and install-tested by CI on the machine
+that runs the nightly checks. The large one is split, because GitHub will not
+take a single file that size:
+
 ```
-nix build github:olafkfreund/nixarchy#iso
+cat nixarchy-v*.iso.part-* > nixarchy.iso     # the 5.6 GB image only
+sha256sum -c --ignore-missing SHA256SUMS
+sudo dd if=nixarchy.iso of=/dev/sdX bs=4M status=progress oflag=sync
+```
+
+`--ignore-missing` because one `SHA256SUMS` covers both images and nobody
+downloads both.
+
+Or build it yourself, which is the same image from the same commit:
+
+```
+nix build --extra-experimental-features 'nix-command flakes' \
+  github:olafkfreund/nixarchy#iso
 sudo dd if=result/iso/nixarchy-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
+
+The `--extra-experimental-features` flag is there because flakes are off by
+default on a stock Nix, and a machine that has never run one is exactly the
+machine someone builds an installer on. On NixOS with this module it is
+redundant and harmless. **Building on a non-NixOS host** also needs the Nix
+daemon running — `systemctl enable --now nix-daemon.socket`, and your user in
+the `nix-users` group on Arch. If `/nix/store` is missing, the Nix install did
+not finish; do not create it by hand, because a multi-user store wants
+`root:nixbld` and mode `1775` rather than whatever `mkdir` leaves behind.
+
+There are two images, and the difference is what they carry:
+
+| | Size | Needs a network | |
+|---|---|---|---|
+| `#iso` | 5.6 GB | no | carries the desktop; installs by copying |
+| `#iso-net` | 1.5 GB | yes | downloads the desktop as it installs |
+
+Take `#iso` unless the download is the thing you mind. It is the one the tests
+boot every night, it works on a machine that has never had a network, and it is
+faster once you have it. `#iso-net` is a quarter of the download and asks you
+to get online first — its first screen offers Wi-Fi if there is no cable.
 
 No boot menu, no login prompt: the installer is what comes up.
 
@@ -811,11 +849,13 @@ Reboot and you are at the desktop. An encrypted install goes straight there —
 the passphrase you typed at boot already proved who you are, so there is no
 second password.
 
-**It does not need a network.** The image carries the desktop rather than
+**`#iso` does not need a network.** The image carries the desktop rather than
 downloading it — 5.6 GB of ISO holding a 15.3 GB closure — so an install is a
 store copy and an activation, not a download. Unplug the cable and it still
 works; `checks.install-iso` proves that by installing with no network device
-present at all. The 56 selectable apps are the exception, and are meant to be:
+present at all. `#iso-net` trades exactly this away: it fetches the same
+closure from `nixarchy.cachix.org` instead, which is why it is 1.5 GB rather
+than 5.6, and why it stops at a Wi-Fi prompt on a machine with no cable. The 56 selectable apps are the exception, and are meant to be:
 they come from the Install menu after first boot, from your own nixpkgs.
 
 **You can answer the questions ahead of time.** `nixarchy-install --answers
@@ -1122,7 +1162,7 @@ done
 
 Almost nothing here waits on a maintainer.
 
-**46 of the 56 apps never touch this repo.** Brave, VSCode, Signal and the rest
+**45 of the 55 apps never touch this repo.** Brave, VSCode, Signal and the rest
 are installed as `pkgs.<name>` from **your** nixpkgs, and the five
 module-backed ones (Steam, 1Password, Tailscale, Firefox, Xbox controllers)
 come from there too — the module is NixOS', not this repo's. Your own
@@ -1162,7 +1202,7 @@ Most of it is not our job, and should not be:
 
 | where the app comes from | who updates it |
 |---|---|
-| nixpkgs (46 of 56 apps) | **nobody** — your own `nix flake update` |
+| nixpkgs (45 of 55 apps) | **nobody** — your own `nix flake update` |
 | pinned in this repo (2) | a weekly bot, opening a PR |
 | `zen` | upstream's own flake |
 | `retroarch` | nixpkgs, via this flake's own pin — it is a rebuild with cores |
@@ -1307,6 +1347,10 @@ inputs.nixarchy = {
 };
 ```
 
+From `v4.0.1-3` on, a tag also publishes the two ISOs and a `SHA256SUMS` to
+the [Releases](https://github.com/olafkfreund/nixarchy/releases) page, so a tag
+is both something to pin and something to install from.
+
 **The version names the Omarchy it vendors**, because that is the first thing
 anyone needs to know about a packaging repo: `v4.0.1-1` is Omarchy 4.0.1. The
 suffix counts packaging releases against that upstream — a fix here that does
@@ -1367,7 +1411,7 @@ the last run in CI on each push; the last is two machines that boot it.
 | | proven by |
 | --- | --- |
 | The session, bar, themes and wallpaper | `checks.session` logs in through SDDM's greeter and asserts the desktop *renders* -- it compares the screen against the wallpaper, because every other check passed once while it was black |
-| Installing on a blank machine | a real install from the ISO onto an empty disk: partitioned, closure copied, bootloader written, and the result booted into the desktop on its own. By hand, not in CI -- `checks.install` is written and not yet green, which is why this line says "two machines" above and not "every push" |
+| Installing on a blank machine | a real install from the ISO onto an empty disk: partitioned, closure copied, bootloader written, and the result booted into the desktop on its own. By hand, not in CI -- `checks.install` installs onto a blank disk in CI and boots the result, asserting that a rebuild immediately afterwards builds nothing |
 | Adding it to a machine you already run | `checks.integration` **builds** the module onto a config that overrides a package Omarchy also uses, pins its own Hyprland and already greets with greetd |
 | Sitting beside an existing Hyprland | `checks.coexist` boots the Omarchy session with a foreign `hyprland.lua` in place and asserts the bar comes up anyway |
 | The CLI | `omarchy commands --check`, plus a count the build refuses to let drift |
@@ -1377,7 +1421,7 @@ the last run in CI on each push; the last is two machines that boot it.
 | Themes installed from a git URL | `checks.session` runs `omarchy theme install` against a real published theme and asserts the desktop moved to it -- name, and a wallpaper that came out of the clone |
 | Nothing reaching into `/usr` | `checks.session` scans every shipped command for a `/usr` path in code, against a named list of the Arch-only ones that explain themselves |
 | Every Install row mapped | `checks.options` compares upstream's menu against `data/apps.nix` both ways -- a row added upstream that nobody maps fails, and so does one that no longer exists |
-| Every menu row's command existing | `checks.options` resolves all 129 `omarchy-*` commands the 323 rows name; a row whose command vanished draws normally and does nothing |
+| Every menu row's command existing | `checks.options` resolves all 129 `omarchy-*` commands the 332 rows name; a row whose command vanished draws normally and does nothing |
 | Migrations refusing to run | `checks.session` asserts `omarchy migrate` explains itself instead of running 86 Arch scripts that sudo into `/usr` |
 | The session under Hyprland's watchdog | `checks.coexist` greps the journal for the warning 0.56 logs when the compositor is exec'd directly instead of through `start-hyprland` |
 | The shell rc files locating themselves | `checks.session` sources each with `OMARCHY_PATH` unset and asserts it resolves to the store, not to a `/usr` path that cannot exist |
@@ -1481,6 +1525,43 @@ Known gaps in detail:
   from `/etc`, with no per-user equivalent, so this lets them set policy for
   every user of the machine -- fine alone, not fine shared. Light and dark
   follow the theme without it
+
+## Roadmap
+
+What is being worked on, and what is planned. The issues are the detail; this
+is the shape.
+
+| epic | what it is for | |
+| --- | --- | --- |
+| [#6](https://github.com/olafkfreund/nixarchy/issues/6) | **bare metal to a desktop** — the installer, the ISO, the release | 18 of 22 done |
+| [#105](https://github.com/olafkfreund/nixarchy/issues/105) | **Flatpaks, declared** — for the software nixpkgs does not carry | not started |
+| [#112](https://github.com/olafkfreund/nixarchy/issues/112) | **getting back** — snapshots, backup, restore | not started |
+
+**Recently finished:** the app selection grew a
+[services catalogue](https://github.com/olafkfreund/nixarchy/issues/90) —
+Docker, SSH, printing and the rest, pickable from the menu the way apps are.
+
+### What is deliberately not planned
+
+**Snap.** `nix-snapd` exposes three options and none of them is a package
+list, so a snap cannot be declared at all — it would be an imperative
+side-channel in a project whose whole claim is that nothing imperative
+survives a rebuild. It also ships a patch its own authors named
+`bubblewrap-insecure.patch`, and
+[fails on Hyprland](https://discourse.nixos.org/t/snap-apps-fail-with-d-bus-x11-errors-on-nixos-hyprland-nix-snapd/75544),
+which is the desktop this is. Nothing worth having is snap-only. See
+[#105](https://github.com/olafkfreund/nixarchy/issues/105) for the reasoning
+in full.
+
+**Anything that edits a configuration nixarchy did not write.** Adding the
+module to a machine you already run means nixarchy is one import among yours,
+and the backup and reset work in
+[#112](https://github.com/olafkfreund/nixarchy/issues/112) refuses to run
+there rather than warning about it.
+
+[Every open issue](https://github.com/olafkfreund/nixarchy/issues) is the
+authoritative list; this table is the summary and CI keeps it honest — an epic
+opened or closed without touching this section fails the build.
 
 ## License
 

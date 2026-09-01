@@ -1,0 +1,203 @@
+name: release
+
+# A tag becomes something a person can download and write to a USB stick.
+#
+# Until now a release here has meant a git ref: the tag *is* the release, and
+# what you do with it is pin a flake input. An ISO changes that. It is five and
+# a half gigabytes that somebody downloads once and then trusts to overwrite
+# their disk, so it has to come from a tag, be built by a machine rather than a
+# laptop, and carry a checksum that was produced by the same run that produced
+# the image.
+#
+# This runs on p510 for the same reason nightly.yml does: a hosted runner has
+# 14 GB of disk, and the image alone is more than a third of that before the
+# 15.3 GB closure it carries. It deliberately mirrors nightly.yml rather than
+# build.yml -- no installer action, no cachix, because the runner is a NixOS
+# machine with a warm store. nightly.yml is the job that actually builds and
+# boots this image every night; if the release recipe drifts from anything, it
+# should be from that one.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+# Never cancel a release mid-upload. A half-attached release is worse than a
+# late one, and two tags pushed together should queue rather than race.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  iso:
+    name: build and publish the ISO
+    runs-on: [self-hosted, nixos, kvm, big]
+    # Two ISO builds, then splitting and uploading 5.6 GB. Was 300 minutes
+    # when this also installed from the image; that step moved to the nightly,
+    # and a smaller window is part of the point -- a job that cannot finish in
+    # ninety minutes has gone wrong rather than gone slowly.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The tag names the Omarchy the flake vendors
+        run: |
+          # v4.0.1-2 -> 4.0.1. The suffix counts our packaging revisions
+          # against an unchanged upstream, so only the first component is a
+          # claim about Omarchy.
+          vendored=$(nix eval --raw .#packages.x86_64-linux.omarchy.version)
+          tagged=${GITHUB_REF_NAME#v}
+          tagged=${tagged%-*}
+          if [ "$vendored" != "$tagged" ]; then
+            echo "::error::tag $GITHUB_REF_NAME claims Omarchy $tagged, the flake vendors $vendored"
+            exit 1
+          fi
+          echo "omarchy=$vendored" >> "$GITHUB_OUTPUT"
+        id: version
+
+      # --out-link, not --no-link: the result is a GC root for the rest of the
+      # job. An ISO collected between building it and uploading it would fail
+      # in a way that took an afternoon to understand.
+      - name: Build the ISO
+        run: nix build .#iso --out-link result --print-build-logs
+
+      # The smaller image, for people who would rather download 1.5 GB and let
+      # the install fetch the rest. Not separately install-tested: it shares
+      # every line of the installer with the image below, and what differs --
+      # downloading rather than copying -- is what checks.install already does.
+      - name: Build the network ISO
+        run: nix build .#iso-net --out-link result-net --print-build-logs
+
+      # checks.install-iso is deliberately NOT here, and the reasoning is
+      # about survivability rather than about trusting the image less.
+      #
+      # It boots the 5.6 GB image and installs a desktop from it, which takes
+      # about an hour, and it ran here because "the image nobody boots is the
+      # image that does not boot". That argument is right and this still holds
+      # it: the nightly runs the same check, against the same expression, on
+      # the same machine.
+      #
+      # What changed is the measured cost of a long release. On 2026-09-01 two
+      # release attempts died before publishing anything -- one when a deploy
+      # restarted the runner mid-job, one when both runners lost their
+      # connection to GitHub while p510 carried on building (the runner
+      # afterwards logged the job as Succeeded, eight minutes after GitHub had
+      # given up on it). Neither was a fault in the image or in this workflow.
+      # A four-hour job is simply a large target: anything that interrupts it
+      # discards four hours and publishes nothing.
+      #
+      # Twenty minutes of building is a target small enough to hit. The image
+      # is still install-tested every night, and a tag is cut from a commit
+      # that has been on main -- so in practice the ISO published here is one
+      # the nightly has already booted.
+      #
+      # If that stops being true -- if tags start being cut faster than
+      # nightlies run -- this decision is worth revisiting.
+
+      - name: Split it into pieces GitHub will accept
+        id: split
+        run: |
+          # GitHub caps a single release asset at 2 GiB and there is no limit
+          # on a release's total size, so the image ships in parts. 1900 MiB
+          # leaves room under the cap without making a fourth part likely.
+          iso=$(echo result/iso/*.iso)
+          net=$(echo result-net/iso/*.iso)
+          base="nixarchy-${GITHUB_REF_NAME}.iso"
+          netbase="nixarchy-${GITHUB_REF_NAME}-net.iso"
+          rm -rf out && mkdir out
+          split -b 1900M -- "$iso" "out/$base.part-"
+
+          # The network image is 1.5 GiB and ships whole. Only the image that
+          # cannot fit gets taken apart.
+          cp -- "$net" "out/$netbase"
+
+          # One SHA256SUMS covering the parts *and* the assembled image, so a
+          # single `sha256sum -c` after reassembly checks both the download and
+          # the cat that put it back together. Checked in that order, because
+          # the image does not exist until the user makes it.
+          (
+            cd out
+            sha256sum "$base".part-* > SHA256SUMS
+            # Hashed from stdin so the store path never reaches the file, and
+            # the name is printed rather than edited in. Rewriting the path out
+            # of sha256sum's own output with sed is greedy and eats the hash
+            # too, which produces a line `sha256sum -c` calls "improperly
+            # formatted", skips, and still exits 0 -- a checksum file that
+            # reports PASS without having checked the image.
+            printf '%s  %s\n' \
+              "$(sha256sum < "$OLDPWD/$iso" | cut -d' ' -f1)" "$base" >> SHA256SUMS
+            sha256sum "$netbase" >> SHA256SUMS
+          )
+
+          {
+            echo "iso=$base"
+            echo "netiso=$netbase"
+            echo "size=$(du -h "$iso" | cut -f1)"
+            echo "netsize=$(du -h "$net" | cut -f1)"
+            echo "parts=$(find out -name "$base.part-*" | wc -l)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write the release notes
+        env:
+          OMARCHY: ${{ steps.version.outputs.omarchy }}
+          ISO: ${{ steps.split.outputs.iso }}
+          SIZE: ${{ steps.split.outputs.size }}
+          NETISO: ${{ steps.split.outputs.netiso }}
+          NETSIZE: ${{ steps.split.outputs.netsize }}
+        run: |
+          # A fixed preamble; --generate-notes appends the PR list under it.
+          # The README is the manual, so this says only what someone holding
+          # the download needs and links to the rest.
+          cat > notes.md <<EOF
+          Omarchy $OMARCHY, packaged for NixOS. Two images, and the difference
+          is what they carry.
+
+          **\`$ISO\`** — $SIZE, carries the whole system closure. The install
+          copies rather than downloads and needs no network at all. Take this
+          one unless the download is what you mind.
+
+          GitHub will not accept a file that size, so it is split. Put it back
+          together and check it:
+
+          \`\`\`
+          cat $ISO.part-* > $ISO
+          sha256sum -c --ignore-missing SHA256SUMS
+          \`\`\`
+
+          **\`$NETISO\`** — $NETSIZE, downloads the desktop as it installs.
+          One file, no reassembly, and it needs a working network: its first
+          screen offers Wi-Fi if there is no cable.
+
+          \`\`\`
+          sha256sum -c --ignore-missing SHA256SUMS
+          \`\`\`
+
+          (\`--ignore-missing\` because one SHA256SUMS covers both images, and
+          nobody downloads both.)
+
+          Then write one to a USB stick and boot it. See
+          [Fresh-machine install](https://github.com/${{ github.repository }}#fresh-machine-install)
+          for what happens next.
+          EOF
+
+      # Pre-release, deliberately, and it stays that way until there is a 1.0.
+      # The README says there is not one yet; a release page should not imply
+      # otherwise.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --generate-notes \
+            --prerelease
+
+      # 5.6 GB of parts on the runner's root filesystem, which is the small
+      # one. The workspace is cleaned at the start of the next run, but a
+      # failed release should not sit on the disk until then.
+      - name: Remove the split copies
+        if: always()
+        run: rm -rf out

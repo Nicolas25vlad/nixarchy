@@ -176,9 +176,16 @@ let
   # this file does not need a second one.
   menuFile = "${(pkgs.extend inputs.self.overlays.default).omarchy}/share/omarchy/default/omarchy/omarchy-menu.jsonc";
 
-  mappedRows = pkgs.lib.mapAttrsToList (_: a: a.menuId) (
-    pkgs.lib.filterAttrs (_: a: a ? menuId) (import ../data/apps.nix)
-  );
+  # An upstream Install row is "mapped" if data/apps.nix answers for it OR
+  # data/services.nix does. Both are now real answers: tailscale moved from
+  # one to the other when it gained a module, and the row went with it. A
+  # check that knew only about apps would have called that unmapped and been
+  # wrong -- the row is wired, just not by the file it used to be wired by.
+  mappedRows =
+    pkgs.lib.mapAttrsToList (_: a: a.menuId) (
+      pkgs.lib.filterAttrs (_: a: a ? menuId) (import ../data/apps.nix)
+    )
+    ++ pkgs.lib.mapAttrsToList (_: s: s.menuId) (pkgs.lib.filterAttrs (_: s: s ? menuId) services);
 
   # Rows that are actions rather than applications, plus the gaps the README
   # names. Fonts go through omarchy-install-font and the Arch-name map; the
@@ -214,6 +221,104 @@ let
   # rather than about an option.
   vm = inputs.self.nixosConfigurations.vm.config.system.build.toplevel;
 
+  # ---- a bundled service yields to a user who already configured it ----
+  #
+  # This is the Mode A hazard in one assertion. Someone adds nixarchy to a
+  # machine they already run and already configure; if a module here sets a
+  # scalar at plain priority, they get "conflicting definition values" and
+  # their only escape is mkForce on their OWN configuration -- the burden
+  # backwards, and exactly what disko #441 and home-manager #5870 are.
+  #
+  # Evaluating at all is most of the proof: a priority clash is an evaluation
+  # error, so a regression here does not produce a wrong value, it produces a
+  # configuration that will not build. Reading the value back checks the other
+  # half, that ours yielded rather than merely tying.
+  syncthingBeside = configBeside {
+    programs.nixarchy = {
+      user = "someone";
+      services.syncthing.enable = true;
+    };
+    # What the user already had, at ordinary priority.
+    services.syncthing.dataDir = "/srv/sync";
+  };
+
+  # The same hazard for the module that bundles Ollama (#96). Worth its own
+  # case rather than trusting the syncthing one: local-ai sets four upstream
+  # scalars, and the two options it deliberately leaves at plain priority --
+  # loadModels and environmentVariables -- merge, so a well-meant mkDefault
+  # there would drop our contribution the moment the user names one of their
+  # own. Reading the port back proves the scalars yield; reading the resolved
+  # endpoint proves the agents follow the server to the port that won, rather
+  # than dialling the one we asked for and nobody is listening on.
+  ollamaBeside = configBeside {
+    programs.nixarchy.localAi = {
+      enable = true;
+      allowCpu = true;
+    };
+    # What the user already had, at ordinary priority.
+    services.ollama.port = 21434;
+  };
+
+  # And the group the desktop user gets, which is the other half of #92: docker
+  # is enabled for every machine at nixos.nix:705 and was usable only on
+  # machines the installer built.
+  dockerGroups =
+    (configBeside { programs.nixarchy.user = "someone"; }).users.users.someone.extraGroups;
+
+  # ---- the services catalogue is shaped the way the generator expects ----
+  #
+  # data/apps.nix has no schema check at all: it is read with `app ? field`
+  # and a missing field simply produces a row nobody notices is wrong. That is
+  # tolerable for a file one person edits rarely and not for a catalogue meant
+  # to grow, so this one is checked.
+  #
+  # What is NOT checked here: that a bundled entry has a module in
+  # modules/services/. Those modules do not exist yet, and an assertion that
+  # fails until they do would mean this file cannot land before them.
+  services = import ../data/services.nix;
+
+  serviceProblems = pkgs.lib.flatten (
+    pkgs.lib.mapAttrsToList (
+      id: svc:
+      let
+        need = field: cond: pkgs.lib.optional (!cond) "  ${id}: ${field}";
+      in
+      [
+        (need "no label" (svc ? label && svc.label != ""))
+        (need "no category" (svc ? category && svc.category != ""))
+        (need "kind must be \"plain\" or \"bundled\"" (
+          svc ? kind
+          && builtins.elem svc.kind [
+            "plain"
+            "bundled"
+          ]
+        ))
+        # A plain entry IS its option path -- the whole point is that the real
+        # upstream line lands in the user's file rather than an alias. Without
+        # the path there is no line to write.
+        (need "kind=plain needs an option path" (
+          (svc.kind or "") != "plain" || (svc ? option && svc.option != [ ])
+        ))
+        # And a bundled entry must not carry one, because its module decides
+        # what to set. A stray path here reads as though it were honoured.
+        (need "kind=bundled must not set option; its module decides" (
+          (svc.kind or "") != "bundled" || !(svc ? option)
+        ))
+        # The note is where the teaching happens. An entry without one is a
+        # row that says what a thing is called and nothing about what turning
+        # it on costs.
+        (need "no note" (svc ? note && svc.note != ""))
+        # #91 could not assert this: modules/services/ did not exist. It does
+        # now, and without this a bundled entry generates a template line for
+        # an option nobody declared -- which fails only when a user uncomments
+        # it, which is the worst moment to find out.
+        (need "kind=bundled needs modules/services/${id}.nix" (
+          (svc.kind or "") != "bundled" || builtins.pathExists ../modules/services/${id}.nix
+        ))
+      ]
+    ) services
+  );
+
   broken = pkgs.lib.filterAttrs (_: c: !(c.on && !c.off)) cases;
 
   report = pkgs.lib.concatStringsSep "\n" (
@@ -228,13 +333,55 @@ pkgs.runCommand "nixarchy-options"
     inherit menuFile vm;
     omarchyPath = "${(pkgs.extend inputs.self.overlays.default).omarchy}/share/omarchy";
     mapped = pkgs.lib.concatStringsSep " " mappedRows;
+    serviceProblems = pkgs.lib.concatStringsSep "\n" serviceProblems;
+    syncthingDataDir = syncthingBeside.services.syncthing.dataDir;
+    ollamaPort = builtins.toString ollamaBeside.services.ollama.port;
+    ollamaEndpoint = ollamaBeside.programs.nixarchy.localAi.resolved.endpoint;
+    dockerGroups = pkgs.lib.concatStringsSep " " dockerGroups;
+    serviceCount = builtins.toString (builtins.length (builtins.attrNames services));
     notApps = pkgs.lib.concatStringsSep " " notApps;
     nativeBuildInputs = [ pkgs.python3 ];
   }
   (
-    if broken == { } then
+    if serviceProblems != [ ] then
+      ''
+        echo "data/services.nix has entries the generator cannot use:" >&2
+        echo "$serviceProblems" >&2
+        exit 1
+      ''
+    else if broken == { } then
       ''
           echo "$report"
+          echo "the services catalogue is well formed ($serviceCount entries)"
+
+          # ---- composition: the user's definition wins -------------------
+          [ "$syncthingDataDir" = "/srv/sync" ] || {
+            echo "a bundled service overrode a value the user had already set:" >&2
+            echo "  services.syncthing.dataDir is $syncthingDataDir, not /srv/sync" >&2
+            echo "every scalar a service module sets must be lib.mkDefault." >&2
+            exit 1
+          }
+          echo "a bundled service yields to configuration the user already had"
+
+          [ "$ollamaPort" = "21434" ] || {
+            echo "local-ai overrode a port the user had already set:" >&2
+            echo "  services.ollama.port is $ollamaPort, not 21434" >&2
+            echo "enable, package, host and port must all be lib.mkDefault." >&2
+            exit 1
+          }
+          [ "$ollamaEndpoint" = "http://127.0.0.1:21434/v1" ] || {
+            echo "the agents were pointed somewhere the server is not:" >&2
+            echo "  endpoint is $ollamaEndpoint, not http://127.0.0.1:21434/v1" >&2
+            exit 1
+          }
+          echo "local-ai yields the Ollama port and the agents follow it"
+
+          case " $dockerGroups " in
+            *" docker "*) echo "the desktop user can reach the docker socket" ;;
+            *) echo "docker is enabled but the desktop user is not in its group" >&2
+               echo "groups: $dockerGroups" >&2
+               exit 1 ;;
+          esac
           echo "every option adds what it should and removes it again"
 
           python3 ${./coverage.py}
