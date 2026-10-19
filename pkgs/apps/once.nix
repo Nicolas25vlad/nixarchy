@@ -14,14 +14,14 @@
   gnugrep,
 }:
 let
-  version = "0.3.2";
+  version = "0.3.4";
   # Hashes come from omarchy-pkgs' own PKGBUILD rather than from a local
   # download, so they are the same artefacts Omarchy ships on Arch.
   # Keyed by system so the updater can rewrite each hash by name; see
   # pkgs/apps/update-script.nix.
   hashes = {
-    "x86_64-linux" = "e1da40a0952879580e43623d6fd6002a391ee469b642c98ecddbe00374facbb6";
-    "aarch64-linux" = "9bd644e1557521b0b8cab93ba3841747cbee0390aa3aa020bd91bfa66ac51dec";
+    "x86_64-linux" = "074c47b18b879a7473dd8a66c1cab1576c3bb82b788b764b24d12b868cb60d01";
+    "aarch64-linux" = "4e2ccca00a6e4cc412845be395814fe58afd77ea79246391b92606ab2e68bb1b";
   };
   urls = {
     "x86_64-linux" = "https://github.com/basecamp/once/releases/download/v${version}/once-linux-amd64";
